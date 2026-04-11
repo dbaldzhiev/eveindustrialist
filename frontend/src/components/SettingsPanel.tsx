@@ -76,6 +76,33 @@ function SelectInput({
   );
 }
 
+function SkillInput({
+  label,
+  value,
+  field,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  field: keyof Settings;
+  onChange: (f: keyof Settings, v: number) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs text-eve-muted">{label}</span>
+      <input
+        type="number"
+        min="0"
+        max="5"
+        value={value}
+        onChange={(e) => onChange(field, Math.min(5, Math.max(0, parseInt(e.target.value) || 0)))}
+        className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
+                   text-sm text-eve-text focus:outline-none focus:border-eve-orange"
+      />
+    </label>
+  );
+}
+
 export default function SettingsPanel({
   settings,
   system,
@@ -87,6 +114,7 @@ export default function SettingsPanel({
 }: Props) {
   const [hubs, setHubs] = useState<MarketHub[]>([]);
   const [showStructure, setShowStructure] = useState(false);
+  const [showSkills, setShowSkills] = useState(false);
 
   useEffect(() => {
     fetchMarketHubs().then(setHubs).catch(() => {});
@@ -99,16 +127,24 @@ export default function SettingsPanel({
 
   return (
     <div className="bg-eve-surface border border-eve-border rounded-lg p-4 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-eve-muted">
           Settings
         </h2>
-        <button
-          onClick={() => setShowStructure((p) => !p)}
-          className="text-xs text-eve-muted hover:text-eve-orange transition-colors"
-        >
-          {showStructure ? "Hide" : "Show"} Structure Bonuses
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowSkills((p) => !p)}
+            className="text-xs text-eve-muted hover:text-eve-orange transition-colors"
+          >
+            {showSkills ? "Hide" : "Show"} Skills
+          </button>
+          <button
+            onClick={() => setShowStructure((p) => !p)}
+            className="text-xs text-eve-muted hover:text-eve-orange transition-colors"
+          >
+            {showStructure ? "Hide" : "Show"} Structure Bonuses
+          </button>
+        </div>
       </div>
 
       {/* Main row */}
@@ -191,46 +227,68 @@ export default function SettingsPanel({
         )}
       </div>
 
+      {/* Character skills (collapsible) */}
+      {showSkills && (
+        <div className="pt-2 border-t border-eve-border/50 space-y-2">
+          <div className="text-xs text-eve-muted font-semibold">Character Skills</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <SkillInput
+              label="Industry (0–5)"
+              value={settings.industry_level}
+              field="industry_level"
+              onChange={set}
+            />
+            <SkillInput
+              label="Adv. Industry (0–5)"
+              value={settings.adv_industry_level}
+              field="adv_industry_level"
+              onChange={set}
+            />
+          </div>
+          <div className="text-xs text-eve-muted/70">
+            Industry: −4% mfg time/level · Advanced Industry: −3% mfg time/level
+          </div>
+        </div>
+      )}
+
       {/* Structure bonuses (collapsible) */}
       {showStructure && (
-        <div className="grid grid-cols-3 gap-4 pt-2 border-t border-eve-border/50">
-          <div>
-            <div className="text-xs text-eve-muted mb-2 font-semibold">Structure Bonuses</div>
-            <div className="grid grid-cols-3 gap-3">
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-eve-muted">ME Bonus %</span>
-                <input
-                  type="number" min="0" max="5" step="0.1"
-                  value={settings.structure_me_bonus}
-                  onChange={(e) => set("structure_me_bonus", parseFloat(e.target.value) || 0)}
-                  className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
-                             text-sm text-eve-text focus:outline-none focus:border-eve-orange"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-eve-muted">TE Bonus %</span>
-                <input
-                  type="number" min="0" max="30" step="0.1"
-                  value={settings.structure_te_bonus}
-                  onChange={(e) => set("structure_te_bonus", parseFloat(e.target.value) || 0)}
-                  className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
-                             text-sm text-eve-text focus:outline-none focus:border-eve-orange"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-eve-muted">Cost Bonus %</span>
-                <input
-                  type="number" min="0" max="25" step="0.1"
-                  value={settings.structure_cost_bonus}
-                  onChange={(e) => set("structure_cost_bonus", parseFloat(e.target.value) || 0)}
-                  className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
-                             text-sm text-eve-text focus:outline-none focus:border-eve-orange"
-                />
-              </label>
-            </div>
-            <div className="text-xs text-eve-muted/70 mt-1.5">
-              Raitaru: 1% ME, 15% TE, 3% Cost &nbsp;·&nbsp; Azbel: 2% ME, 20% TE, 4% Cost
-            </div>
+        <div className="pt-2 border-t border-eve-border/50 space-y-2">
+          <div className="text-xs text-eve-muted font-semibold">Structure Bonuses</div>
+          <div className="grid grid-cols-3 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-eve-muted">ME Bonus %</span>
+              <input
+                type="number" min="0" max="5" step="0.1"
+                value={settings.structure_me_bonus}
+                onChange={(e) => set("structure_me_bonus", parseFloat(e.target.value) || 0)}
+                className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
+                           text-sm text-eve-text focus:outline-none focus:border-eve-orange"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-eve-muted">TE Bonus %</span>
+              <input
+                type="number" min="0" max="30" step="0.1"
+                value={settings.structure_te_bonus}
+                onChange={(e) => set("structure_te_bonus", parseFloat(e.target.value) || 0)}
+                className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
+                           text-sm text-eve-text focus:outline-none focus:border-eve-orange"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-eve-muted">Cost Bonus %</span>
+              <input
+                type="number" min="0" max="25" step="0.1"
+                value={settings.structure_cost_bonus}
+                onChange={(e) => set("structure_cost_bonus", parseFloat(e.target.value) || 0)}
+                className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
+                           text-sm text-eve-text focus:outline-none focus:border-eve-orange"
+              />
+            </label>
+          </div>
+          <div className="text-xs text-eve-muted/70">
+            Raitaru: 1% ME, 15% TE, 3% Cost &nbsp;·&nbsp; Azbel: 2% ME, 20% TE, 4% Cost
           </div>
         </div>
       )}

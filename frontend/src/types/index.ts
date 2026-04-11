@@ -3,6 +3,11 @@ export interface Character {
   character_name: string;
 }
 
+export interface CharacterGroup {
+  primary_character_id: number;
+  characters: Character[];
+}
+
 export interface Region {
   region_id: number;
   name: string;
@@ -73,6 +78,8 @@ export interface Settings {
   structure_cost_bonus: number;
   assumed_me:           number;
   assumed_te:           number;
+  industry_level:       number;
+  adv_industry_level:   number;
 }
 
 export interface Structure {
@@ -89,18 +96,7 @@ export interface WarehouseItem {
   type_id:   number;
   type_name: string;
   quantity:  number;
-}
-
-export interface ShoppingListItem {
-  id:                number;
-  character_id:      number;
-  blueprint_type_id: number;
-  blueprint_name:    string;
-  product_type_id:   number;
-  product_name:      string;
-  runs:              number;
-  me:                number;
-  te:                number;
+  location?: string;
 }
 
 export interface ShoppingMaterial {
@@ -114,4 +110,94 @@ export interface ShoppingMaterial {
 export interface TypeResult {
   type_id:   number;
   type_name: string;
+}
+
+// Slots / Dashboard
+export interface SlotSuggestion {
+  blueprint_type_id: number;
+  blueprint_name:    string;
+  product_name:      string;
+  profit:            number;
+  isk_per_hour:      number;
+  margin_pct:        number;
+}
+
+export interface CharacterSlots {
+  character_id:         number;
+  character_name:       string;
+  mfg_used:             number;
+  mfg_max:              number;
+  research_used:        number;
+  research_max:         number;
+  reaction_used:        number;
+  reaction_max:         number;
+  active_jobs:          ActiveJob[];
+  suggestions:          SlotSuggestion[];
+}
+
+export interface ActiveJob {
+  job_id:          number;
+  activity_name:   string;
+  product_name:    string;
+  product_type_id: number;
+  runs:            number;
+  end_date:        string;
+}
+
+// Plans
+export interface Plan {
+  id:         number;
+  name:       string;
+  created_at: number;  // unix timestamp
+}
+
+export interface PlanItem {
+  id:               number;
+  plan_id:          number;
+  blueprint_type_id: number;
+  blueprint_name:   string;
+  product_type_id:  number;
+  product_name:     string;
+  runs:             number;
+  me:               number;
+  te:               number;
+}
+
+export interface PlanStats {
+  total_material_cost:  number;
+  total_job_cost:       number;
+  total_cost:           number;
+  total_revenue:        number;
+  total_profit:         number;
+  total_margin_pct:     number;
+  items:                PlanStatItem[];
+}
+
+export interface PlanStatItem {
+  blueprint_name: string;
+  product_name:   string;
+  runs:           number;
+  profit:         number;
+  isk_per_hour:   number;
+}
+
+export interface PlanShoppingResult {
+  materials: ShoppingMaterial[];
+  multibuy:  string;
+}
+
+// App settings (global, persisted on backend)
+export interface AppSettings {
+  solar_system_id:      number | null;
+  price_region_id:      number;
+  broker_fee:           number;
+  sales_tax:            number;
+  facility_tax:         number;
+  structure_me_bonus:   number;
+  structure_te_bonus:   number;
+  structure_cost_bonus: number;
+  material_order_type:  "sell" | "buy";
+  product_order_type:   "sell" | "buy";
+  industry_level:       number;
+  adv_industry_level:   number;
 }

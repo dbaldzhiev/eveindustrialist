@@ -1,1 +1,3 @@
 /reference
+/backend/.env
+eve_industry.db

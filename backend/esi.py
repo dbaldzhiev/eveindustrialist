@@ -1,18 +1,39 @@
 """
 ESI API client with caching.
 
-Public:  /markets/prices/  /industry/systems/
-Auth:    /characters/{id}/blueprints/
+Public:   /markets/prices/  /industry/systems/
+Auth:     /characters/{id}/blueprints/
+          /characters/{id}/skills/
+          /characters/{id}/industry/jobs/
+          /characters/{id}/assets/
 """
 import time
 import httpx
-from database import get_db, _chunk
+from database import (
+    get_db, _chunk,
+    get_cached_skills, store_skills,
+    get_cached_jobs, store_jobs,
+    get_cached_assets, store_assets,
+    get_type_names_batch,
+)
 
 BASE_URL   = "https://esi.evetech.net/latest"
 DATASOURCE = "tranquility"
 
 PRICE_TTL      = 86400  # 24 h
 COST_INDEX_TTL = 3600   # 1 h
+
+# Industry skills that affect time / slot counts
+# NOTE: skill IDs verified against EVE SDE – update here if they ever change
+INDUSTRY_SKILL_IDS = {
+    "industry":            3380,   # -4% mfg time per level
+    "adv_industry":        3388,   # -3% mfg time per level
+    "mass_production":     3387,   # +1 mfg slot per level
+    "adv_mass_production": 24625,  # +1 mfg slot per level
+    "lab_operation":       3406,   # +1 research slot per level
+    "adv_lab_operation":   24624,  # +1 research slot per level
+    "mass_reactions":      45748,  # +1 reaction slot per level (approx – verify in SDE)
+}
 
 
 def _esi_get(path: str, token: str | None = None, params: dict | None = None) -> list | dict:
@@ -30,11 +51,10 @@ def _esi_get(path: str, token: str | None = None, params: dict | None = None) ->
 
 
 def _esi_get_paged(path: str, token: str | None = None) -> list:
-    """Fetch all pages of a paginated ESI endpoint, reusing one HTTP connection."""
+    """Fetch all pages of a paginated ESI endpoint."""
     headers = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-
     results = []
     page = 1
     with httpx.Client(timeout=30) as client:
@@ -61,9 +81,8 @@ def _esi_get_paged(path: str, token: str | None = None) -> list:
 
 def get_adjusted_prices() -> dict[int, dict]:
     """Return {type_id: {adjusted_price, average_price}}, cached 24 h."""
-    db = get_db()
+    db  = get_db()
     row = db.execute("SELECT updated_at FROM adjusted_price_cache LIMIT 1").fetchone()
-
     if row and (time.time() - row["updated_at"]) < PRICE_TTL:
         rows = db.execute(
             "SELECT type_id, adjusted_price, average_price FROM adjusted_price_cache"
@@ -76,8 +95,8 @@ def get_adjusted_prices() -> dict[int, dict]:
     now  = time.time()
     db.execute("DELETE FROM adjusted_price_cache")
     db.executemany(
-        "INSERT INTO adjusted_price_cache (type_id, adjusted_price, average_price, updated_at)"
-        " VALUES (?,?,?,?)",
+        "INSERT INTO adjusted_price_cache (type_id, adjusted_price, average_price, updated_at) "
+        "VALUES (?,?,?,?)",
         [(item["type_id"], item.get("adjusted_price", 0.0), item.get("average_price", 0.0), now)
          for item in data],
     )
@@ -93,29 +112,26 @@ def get_adjusted_prices() -> dict[int, dict]:
 # ---------------------------------------------------------------------------
 
 def get_manufacturing_cost_index(solar_system_id: int) -> float:
-    """Return manufacturing cost index for a system, cached 1 h."""
-    db = get_db()
+    db  = get_db()
     row = db.execute(
         "SELECT manufacturing_index, updated_at FROM cost_index_cache WHERE solar_system_id = ?",
         (solar_system_id,),
     ).fetchone()
-
     if row and (time.time() - row["updated_at"]) < COST_INDEX_TTL:
         db.close()
         return row["manufacturing_index"]
 
-    data = _esi_get("/industry/systems/")
-    now  = time.time()
+    data      = _esi_get("/industry/systems/")
+    now       = time.time()
     index_map = {}
     for system in data:
         for activity in system.get("cost_indices", []):
             if activity["activity"] == "manufacturing":
                 index_map[system["solar_system_id"]] = activity["cost_index"]
                 break
-
     db.executemany(
-        "INSERT OR REPLACE INTO cost_index_cache (solar_system_id, manufacturing_index, updated_at)"
-        " VALUES (?,?,?)",
+        "INSERT OR REPLACE INTO cost_index_cache (solar_system_id, manufacturing_index, updated_at) "
+        "VALUES (?,?,?)",
         [(sid, idx, now) for sid, idx in index_map.items()],
     )
     db.commit()
@@ -128,28 +144,11 @@ def get_manufacturing_cost_index(solar_system_id: int) -> float:
 # ---------------------------------------------------------------------------
 
 def get_character_blueprints(character_id: int, access_token: str) -> list[dict]:
-    """
-    Fetch character blueprints from ESI.
-    quantity = -1 → BPO (unlimited runs).  me/te are 0-10/0-20.
-    """
     raw = _esi_get_paged(f"/characters/{character_id}/blueprints/", token=access_token)
     if not raw:
         return []
-
-    # Batch-resolve all type names in one query
-    all_ids = list({bp["type_id"] for bp in raw})
-    name_map: dict[int, str] = {}
-    db = get_db()
-    try:
-        for chunk in _chunk(all_ids):
-            ph = ",".join("?" * len(chunk))
-            for row in db.execute(
-                f"SELECT typeID, typeName FROM invTypes WHERE typeID IN ({ph})", chunk
-            ).fetchall():
-                name_map[row["typeID"]] = row["typeName"]
-    finally:
-        db.close()
-
+    all_ids  = list({bp["type_id"] for bp in raw})
+    name_map = get_type_names_batch(all_ids)
     return [
         {
             "item_id":     bp["item_id"],
@@ -160,6 +159,153 @@ def get_character_blueprints(character_id: int, access_token: str) -> list[dict]
             "te":          bp["time_efficiency"],
             "runs":        bp["runs"],
             "location_id": bp["location_id"],
+            "character_id": character_id,
         }
         for bp in raw
     ]
+
+
+# ---------------------------------------------------------------------------
+# Character skills
+# ---------------------------------------------------------------------------
+
+def get_character_skills(character_id: int, access_token: str) -> dict[int, int]:
+    """
+    Return {skill_id: trained_level} for industry-relevant skills.
+    Results are cached for 1 hour.
+    """
+    skill_ids = list(INDUSTRY_SKILL_IDS.values())
+    cached    = get_cached_skills(character_id, skill_ids)
+    if len(cached) == len(skill_ids):
+        return cached  # all needed skills are in cache
+
+    # Fetch full skill sheet from ESI
+    data   = _esi_get(f"/characters/{character_id}/skills/", token=access_token)
+    skills = {s["skill_id"]: s["trained_skill_level"] for s in data.get("skills", [])}
+    # Cache all skills returned
+    store_skills(character_id, skills)
+    # Return only the subset we need
+    return {sid: skills.get(sid, 0) for sid in skill_ids}
+
+
+def get_industry_skill_levels(character_id: int, access_token: str) -> dict[str, int]:
+    """Return a named dict of industry skill levels for profitability calculations."""
+    raw = get_character_skills(character_id, access_token)
+    return {
+        name: raw.get(sid, 0)
+        for name, sid in INDUSTRY_SKILL_IDS.items()
+    }
+
+
+# ---------------------------------------------------------------------------
+# Character industry jobs
+# ---------------------------------------------------------------------------
+
+# Activity ID → human-readable name
+ACTIVITY_NAMES = {
+    1:  "Manufacturing",
+    3:  "TE Research",
+    4:  "ME Research",
+    5:  "Copying",
+    8:  "Invention",
+    9:  "Reactions",
+    11: "Reactions",
+}
+
+# Slot categories
+MFG_ACTIVITIES      = {1}
+RESEARCH_ACTIVITIES = {3, 4, 5, 8}
+REACTION_ACTIVITIES = {9, 11}
+
+
+def get_character_jobs(character_id: int, access_token: str) -> list[dict]:
+    """
+    Return active industry jobs for a character. Cached for 5 minutes.
+    """
+    cached = get_cached_jobs(character_id)
+    if cached is not None:
+        return [j for j in cached if j["status"] == "active"]
+
+    raw = _esi_get(
+        f"/characters/{character_id}/industry/jobs/",
+        token=access_token,
+        params={"include_completed": "false"},
+    )
+    if not isinstance(raw, list):
+        raw = []
+
+    # Resolve type names
+    all_type_ids = set()
+    for job in raw:
+        if job.get("blueprint_type_id"):
+            all_type_ids.add(job["blueprint_type_id"])
+        if job.get("product_type_id"):
+            all_type_ids.add(job["product_type_id"])
+    name_map = get_type_names_batch(list(all_type_ids))
+
+    jobs = [
+        {
+            "job_id":             job["job_id"],
+            "activity_id":        job["activity_id"],
+            "activity_name":      ACTIVITY_NAMES.get(job["activity_id"], "Unknown"),
+            "blueprint_type_id":  job.get("blueprint_type_id"),
+            "product_type_id":    job.get("product_type_id"),
+            "blueprint_name":     name_map.get(job.get("blueprint_type_id"), ""),
+            "product_name":       name_map.get(job.get("product_type_id"), ""),
+            "status":             job.get("status", "active"),
+            "runs":               job.get("runs", 1),
+            "start_date":         job.get("start_date", ""),
+            "end_date":           job.get("end_date", ""),
+            "duration":           job.get("duration", 0),
+        }
+        for job in raw
+    ]
+    store_jobs(character_id, jobs)
+    return [j for j in jobs if j["status"] == "active"]
+
+
+# ---------------------------------------------------------------------------
+# Character assets
+# ---------------------------------------------------------------------------
+
+def get_character_assets(character_id: int, access_token: str) -> list[dict]:
+    """
+    Return all character assets. Cached for 1 hour.
+    Results are grouped by type_id + location_id.
+    """
+    cached = get_cached_assets(character_id)
+    if cached is not None:
+        return cached
+
+    raw = _esi_get_paged(f"/characters/{character_id}/assets/", token=access_token)
+    if not raw:
+        store_assets(character_id, [])
+        return []
+
+    # Only keep items in station/structure hangars (skip cargo, fitted modules, etc.)
+    hangar_flags = {"Hangar", "AutoFit", "CorpDeliveries", "HangarAll", "OfficeFolder"}
+    hangar_items = [
+        item for item in raw
+        if item.get("location_flag") in hangar_flags
+        and item.get("location_type") in ("station", "solar_system", "other")
+        and not item.get("is_singleton", False)
+    ]
+
+    # Resolve type names
+    all_type_ids = list({item["type_id"] for item in hangar_items})
+    name_map     = get_type_names_batch(all_type_ids)
+
+    assets = [
+        {
+            "item_id":     item["item_id"],
+            "type_id":     item["type_id"],
+            "type_name":   name_map.get(item["type_id"], f"Type {item['type_id']}"),
+            "location_id": item["location_id"],
+            "quantity":    item.get("quantity", 1),
+        }
+        for item in hangar_items
+        if name_map.get(item["type_id"])  # skip types not in SDE
+    ]
+
+    store_assets(character_id, assets)
+    return get_cached_assets(character_id) or []

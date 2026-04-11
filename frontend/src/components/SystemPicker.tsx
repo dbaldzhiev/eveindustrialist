@@ -13,7 +13,7 @@ function secColor(sec: number): string {
   return "text-red-400";
 }
 
-export default function SystemPicker({ value, onChange }: Props) {
+export default function SystemPicker({ value: _value, onChange }: Props) {
   const [query, setQuery]     = useState("");
   const [results, setResults] = useState<SolarSystem[]>([]);
   const [open, setOpen]       = useState(false);

@@ -20,6 +20,8 @@ export const DEFAULT_SETTINGS: Settings = {
   structure_cost_bonus: 0,
   assumed_me:           10,
   assumed_te:           20,
+  industry_level:       0,
+  adv_industry_level:   0,
 };
 
 interface Props {

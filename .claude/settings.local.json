@@ -4,7 +4,11 @@
       "WebFetch(domain:developers.eveonline.com)",
       "WebFetch(domain:esi.evetech.net)",
       "Bash(echo \"exit:$?\")",
-      "Bash(python -c \"import secrets; print\\(secrets.token_hex\\(32\\)\\)\")"
+      "Bash(python -c \"import secrets; print\\(secrets.token_hex\\(32\\)\\)\")",
+      "Bash(del \"c:\\\\Users\\\\db\\\\eveindustrialist\\\\frontend\\\\src\\\\pages\\\\ShoppingListPage.tsx\")",
+      "Bash(npx tsc:*)",
+      "Bash(python -m py_compile main.py)",
+      "Bash(node_modules/.bin/tsc --noEmit)"
     ]
   }
 }

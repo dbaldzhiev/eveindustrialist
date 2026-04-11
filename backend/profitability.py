@@ -4,15 +4,18 @@ from dataclasses import dataclass, field
 
 @dataclass
 class ProfitSettings:
-    broker_fee:          float = 0.0368
-    sales_tax:           float = 0.036
-    facility_tax:        float = 0.0
-    runs:                int   = 1
-    structure_me_bonus:  float = 0.0   # % additional ME reduction (e.g. 1.0 = 1%)
-    structure_te_bonus:  float = 0.0   # % additional TE reduction (e.g. 15.0 = 15%)
-    structure_cost_bonus: float = 0.0  # % job cost reduction from structure (e.g. 3.0 = 3%)
-    material_order_type: str  = "sell" # "sell" = buy at sell order price; "buy" = place buy orders
-    product_order_type:  str  = "sell" # "sell" = list sell orders; "buy" = sell to buy orders
+    broker_fee:           float = 0.0368
+    sales_tax:            float = 0.036
+    facility_tax:         float = 0.0
+    runs:                 int   = 1
+    structure_me_bonus:   float = 0.0   # % additional ME reduction (e.g. 1.0 = 1%)
+    structure_te_bonus:   float = 0.0   # % additional TE reduction (e.g. 15.0 = 15%)
+    structure_cost_bonus: float = 0.0   # % job cost reduction from structure
+    material_order_type:  str   = "sell"
+    product_order_type:   str   = "sell"
+    # Industry skills (applied to manufacturing time only)
+    industry_level:       int   = 0     # Industry skill (-4% time/level)
+    adv_industry_level:   int   = 0     # Advanced Industry (-3% time/level)
 
 
 @dataclass
@@ -20,7 +23,7 @@ class MaterialLine:
     type_id:    int
     name:       str
     quantity:   int
-    unit_price: float   # price of input material (per unit)
+    unit_price: float
     total_cost: float
 
 
@@ -79,8 +82,8 @@ class BlueprintProfit:
 
 def calc_qty_with_me(base_qty: int, me: int, structure_me_bonus: float = 0.0) -> int:
     """
-    Apply blueprint ME and optional structure ME bonus.
-    Both are percentages: me=10 means 10% reduction, structure_me_bonus=1.0 means 1%.
+    Apply blueprint ME (0–10%) and optional structure ME bonus.
+    Both are percentages: me=10 → 10% reduction, structure_me_bonus=1.0 → 1%.
     """
     return max(1, math.ceil(
         base_qty * (1.0 - me / 100.0) * (1.0 - structure_me_bonus / 100.0)
@@ -130,7 +133,6 @@ def calculate_blueprint_profit(
     material_cost *= settings.runs
     eiv           *= settings.runs
 
-    # Structure cost bonus reduces the job cost; facility tax is on top
     structure_discount = 1.0 - settings.structure_cost_bonus / 100.0
     job_cost   = eiv * system_cost_index * structure_discount * (1.0 + settings.facility_tax)
     total_cost = material_cost + job_cost
@@ -142,8 +144,16 @@ def calculate_blueprint_profit(
     profit     = net_revenue - total_cost
     margin_pct = (profit / total_cost * 100.0) if total_cost > 0 else 0.0
 
-    # TE is 0-20; structure TE bonus is an additional % reduction
-    te_factor    = (1.0 - te / 100.0) * (1.0 - settings.structure_te_bonus / 100.0)
+    # Time: blueprint TE + structure TE bonus + character Industry skills
+    skill_time_mult = (
+        (1.0 - 0.04 * settings.industry_level) *
+        (1.0 - 0.03 * settings.adv_industry_level)
+    )
+    te_factor    = (
+        (1.0 - te / 100.0) *
+        (1.0 - settings.structure_te_bonus / 100.0) *
+        skill_time_mult
+    )
     total_hours  = (base_time_seconds * te_factor / 3600.0) * settings.runs
     isk_per_hour = (profit / total_hours) if total_hours > 0 else 0.0
 

@@ -4,7 +4,8 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import ExplorerPage from "./pages/ExplorerPage";
 import WarehousePage from "./pages/WarehousePage";
-import ShoppingListPage from "./pages/ShoppingListPage";
+import SlotsPage from "./pages/SlotsPage";
+import PlansPage from "./pages/PlansPage";
 import { fetchMe } from "./api/client";
 import type { Character } from "./types";
 
@@ -29,7 +30,11 @@ export default function App() {
     <Routes>
       <Route
         path="/"
-        element={character ? <Navigate to="/dashboard" replace /> : <LoginPage />}
+        element={character ? <Navigate to="/slots" replace /> : <LoginPage />}
+      />
+      <Route
+        path="/slots"
+        element={character ? <SlotsPage character={character} /> : <Navigate to="/" replace />}
       />
       <Route
         path="/dashboard"
@@ -44,8 +49,8 @@ export default function App() {
         element={character ? <WarehousePage character={character} /> : <Navigate to="/" replace />}
       />
       <Route
-        path="/shopping-list"
-        element={character ? <ShoppingListPage character={character} /> : <Navigate to="/" replace />}
+        path="/plans"
+        element={character ? <PlansPage character={character} /> : <Navigate to="/" replace />}
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

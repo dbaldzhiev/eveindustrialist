@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:developers.eveonline.com)",
+      "WebFetch(domain:esi.evetech.net)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(python -c \"import secrets; print\\(secrets.token_hex\\(32\\)\\)\")"
+    ]
+  }
+}

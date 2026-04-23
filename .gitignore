@@ -1,3 +1,41 @@
-/reference
-/backend/.env
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+frontend/node_modules/
+frontend/dist/
+
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+backend/__pycache__/
+backend/.venv/
+backend/.env
+backend/.pytest_cache/
+
+# Local Database & Data
+*.db
+*.sqlite3
 eve_industry.db
+!reference/
+
+# IDE / Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Gemini / AI tools
+.claude/
+.gemini/
+ref/

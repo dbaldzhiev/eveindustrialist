@@ -3,6 +3,7 @@ import type {
   Character, CharacterGroup, Region, SolarSystem, BlueprintResult, Settings,
   MarketHub, Structure, WarehouseItem, TypeResult,
   CharacterSlots, Plan, PlanItem, PlanStats, PlanShoppingResult, AppSettings,
+  AssetLocation,
 } from "../types";
 
 const api = axios.create({
@@ -224,6 +225,15 @@ export async function fetchAppSettings(): Promise<AppSettings> {
 }
 
 export async function saveAppSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
-  const { data } = await api.post<AppSettings>("/api/settings", settings);
+  const { data } = await api.put<AppSettings>("/api/settings", settings);
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Asset locations (warehouse source picker)
+// ---------------------------------------------------------------------------
+
+export async function fetchAssetLocations(): Promise<AssetLocation[]> {
+  const { data } = await api.get<AssetLocation[]>("/api/assets/locations");
   return data;
 }

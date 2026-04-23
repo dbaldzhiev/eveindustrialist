@@ -268,43 +268,129 @@ def get_character_jobs(character_id: int, access_token: str) -> list[dict]:
 # Character assets
 # ---------------------------------------------------------------------------
 
-def get_character_assets(character_id: int, access_token: str) -> list[dict]:
+def resolve_location_names(
+    location_ids: list[int],
+    char_tokens: list[str] | None = None,
+) -> dict[int, str]:
     """
-    Return all character assets. Cached for 1 hour.
-    Results are grouped by type_id + location_id.
+    Resolve location IDs to display names.
+
+    - NPC station / solar system IDs (< 1 000 000 000 000): public /universe/names/ bulk call.
+    - Player structure IDs (>= 1 000 000 000 000): authenticated /universe/structures/{id}/ call.
+      Tries each token in char_tokens until one succeeds.
     """
-    cached = get_cached_assets(character_id)
-    if cached is not None:
-        return cached
+    if not location_ids:
+        return {}
+
+    names: dict[int, str] = {}
+    npc_ids       = [i for i in location_ids if i < 1_000_000_000_000]
+    structure_ids = [i for i in location_ids if i >= 1_000_000_000_000]
+
+    # --- NPC stations / solar systems (public) ---
+    if npc_ids:
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(
+                    f"{BASE_URL}/universe/names/",
+                    json=npc_ids,
+                    params={"datasource": DATASOURCE},
+                    headers={"Accept": "application/json"},
+                )
+            if resp.is_success:
+                for item in resp.json():
+                    names[item["id"]] = item["name"]
+        except Exception:
+            pass
+
+    # --- Player-owned structures (authenticated) ---
+    if structure_ids:
+        tokens = char_tokens or []
+        with httpx.Client(timeout=15) as client:
+            for sid in structure_ids:
+                resolved = False
+                for token in tokens:
+                    try:
+                        resp = client.get(
+                            f"{BASE_URL}/universe/structures/{sid}/",
+                            headers={
+                                "Accept": "application/json",
+                                "Authorization": f"Bearer {token}",
+                            },
+                            params={"datasource": DATASOURCE},
+                        )
+                        if resp.is_success:
+                            names[sid] = resp.json().get("name", f"Structure #{sid}")
+                            resolved = True
+                            break
+                    except Exception:
+                        continue
+                if not resolved:
+                    names[sid] = f"Player Structure #{sid}"
+
+    return names
+
+
+def get_character_assets(character_id: int, access_token: str,
+                          force_refresh: bool = False) -> list[dict]:
+    """
+    Return all assets reachable from hangars (stations, player structures, containers).
+    Cached 1 hour unless force_refresh=True.
+
+    Strategy: use the parent-child structure of the ESI asset tree rather than
+    relying on location_flag or location_type strings, which are unreliable for
+    player-owned structures and can vary by context.
+
+    - Top-level items: their location_id is NOT the item_id of any other asset
+      (i.e. they sit directly in a station/structure, not inside a ship/container)
+    - Containers: top-level items that themselves have children in the data
+    - We keep: all top-level items + their direct children (one level deep)
+    """
+    if not force_refresh:
+        cached = get_cached_assets(character_id)
+        if cached is not None:
+            return cached
 
     raw = _esi_get_paged(f"/characters/{character_id}/assets/", token=access_token)
     if not raw:
         store_assets(character_id, [])
         return []
 
-    # Only keep items in station/structure hangars (skip cargo, fitted modules, etc.)
-    hangar_flags = {"Hangar", "AutoFit", "CorpDeliveries", "HangarAll", "OfficeFolder"}
-    hangar_items = [
+    all_item_ids = {item["item_id"] for item in raw}
+
+    # Items whose parent is NOT another asset → directly in a station/structure
+    top_level_ids = {
+        item["item_id"] for item in raw
+        if item["location_id"] not in all_item_ids
+    }
+
+    # Top-level items that have at least one child → treat as containers
+    parents_of_children = {
+        item["location_id"] for item in raw
+        if item["location_id"] in top_level_ids
+    }
+    container_item_ids = top_level_ids & parents_of_children
+
+    # Keep all top-level items + items one level deep inside them
+    keep = [
         item for item in raw
-        if item.get("location_flag") in hangar_flags
-        and item.get("location_type") in ("station", "solar_system", "other")
-        and not item.get("is_singleton", False)
+        if item["item_id"] in top_level_ids
+        or item["location_id"] in top_level_ids
     ]
 
-    # Resolve type names
-    all_type_ids = list({item["type_id"] for item in hangar_items})
+    all_type_ids = list({item["type_id"] for item in keep})
     name_map     = get_type_names_batch(all_type_ids)
 
     assets = [
         {
-            "item_id":     item["item_id"],
-            "type_id":     item["type_id"],
-            "type_name":   name_map.get(item["type_id"], f"Type {item['type_id']}"),
-            "location_id": item["location_id"],
-            "quantity":    item.get("quantity", 1),
+            "item_id":       item["item_id"],
+            "type_id":       item["type_id"],
+            "type_name":     name_map.get(item["type_id"]) or f"Unknown [{item['type_id']}]",
+            "location_id":   item["location_id"],
+            "location_type": item.get("location_type", ""),
+            "is_container":  item["item_id"] in container_item_ids,
+            "quantity":      item.get("quantity", 1),
         }
-        for item in hangar_items
-        if name_map.get(item["type_id"])  # skip types not in SDE
+        for item in keep
     ]
 
     store_assets(character_id, assets)

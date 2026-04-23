@@ -188,16 +188,29 @@ export interface PlanShoppingResult {
 
 // App settings (global, persisted on backend)
 export interface AppSettings {
-  solar_system_id:      number | null;
-  price_region_id:      number;
-  broker_fee:           number;
-  sales_tax:            number;
-  facility_tax:         number;
-  structure_me_bonus:   number;
-  structure_te_bonus:   number;
-  structure_cost_bonus: number;
-  material_order_type:  "sell" | "buy";
-  product_order_type:   "sell" | "buy";
-  industry_level:       number;
-  adv_industry_level:   number;
+  default_system_id:       number | null;
+  default_price_region:    number;
+  broker_fee:              number;
+  sales_tax:               number;
+  facility_tax:            number;
+  structure_me_bonus:      number;
+  structure_te_bonus:      number;
+  structure_cost_bonus:    number;
+  industry_level:          number;
+  adv_industry_level:      number;
+  warehouse_character_id:  number | null;
+  warehouse_location_id:   number | null;
+  warehouse_location_name: string | null;
+}
+
+// Warehouse location picker
+export interface AssetLocation {
+  character_id:   number;
+  character_name: string;
+  loc_id:         number;
+  location_name:  string;
+  container_name: string;
+  is_container:   number;   // 0 or 1
+  type_count:     number;
+  total_quantity: number;
 }

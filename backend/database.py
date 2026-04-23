@@ -166,14 +166,22 @@ def init_db():
 
 def _migrate(conn: sqlite3.Connection):
     """Apply incremental schema migrations (safe to run on every startup)."""
-    migrations = [
-        # Add primary_character_id to old sessions rows
-        "UPDATE sessions SET primary_character_id = character_id WHERE primary_character_id IS NULL",
-        # Add link_to_primary_id to old pkce_state rows (column was added in CREATE TABLE above)
-    ]
     # Add missing columns to existing tables (ALTER TABLE is idempotent via try/except)
     _add_column_if_missing(conn, "sessions",   "primary_character_id", "INTEGER")
     _add_column_if_missing(conn, "pkce_state", "link_to_primary_id",   "INTEGER")
+    # asset_cache: container + location metadata
+    _add_column_if_missing(conn, "asset_cache", "is_container",  "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "asset_cache", "location_type", "TEXT    NOT NULL DEFAULT ''")
+    # user_settings: skills + warehouse source
+    _add_column_if_missing(conn, "user_settings", "industry_level",       "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "user_settings", "adv_industry_level",   "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "user_settings", "warehouse_character_id", "INTEGER")
+    _add_column_if_missing(conn, "user_settings", "warehouse_location_id",  "INTEGER")
+    _add_column_if_missing(conn, "user_settings", "warehouse_location_name","TEXT")
+
+    migrations = [
+        "UPDATE sessions SET primary_character_id = character_id WHERE primary_character_id IS NULL",
+    ]
     for sql in migrations:
         try:
             conn.execute(sql)
@@ -262,30 +270,40 @@ def remove_character_from_group(primary_character_id: int, character_id: int) ->
 # User settings helpers
 # ---------------------------------------------------------------------------
 
+_SETTINGS_DEFAULTS = {
+    "default_structure_id":   None,
+    "default_system_id":      None,
+    "default_price_region":   10000002,
+    "broker_fee":             0.0368,
+    "sales_tax":              0.036,
+    "facility_tax":           0.0,
+    "structure_me_bonus":     0.0,
+    "structure_te_bonus":     0.0,
+    "structure_cost_bonus":   0.0,
+    "industry_level":         0,
+    "adv_industry_level":     0,
+    "warehouse_character_id": None,
+    "warehouse_location_id":  None,
+    "warehouse_location_name": None,
+}
+
+
 def get_user_settings(primary_character_id: int) -> dict:
     row = _query_one(
         "SELECT * FROM user_settings WHERE primary_character_id = ?",
         (primary_character_id,),
     )
     if not row:
-        return {
-            "primary_character_id":  primary_character_id,
-            "default_structure_id":  None,
-            "default_system_id":     None,
-            "default_price_region":  10000002,
-            "broker_fee":            0.0368,
-            "sales_tax":             0.036,
-            "facility_tax":          0.0,
-            "structure_me_bonus":    0.0,
-            "structure_te_bonus":    0.0,
-            "structure_cost_bonus":  0.0,
-        }
-    return row
+        return {"primary_character_id": primary_character_id, **_SETTINGS_DEFAULTS}
+    # Fill in any missing keys (from migrations) with defaults
+    result = dict(_SETTINGS_DEFAULTS)
+    result.update(row)
+    return result
 
 
 def upsert_user_settings(primary_character_id: int, **kwargs) -> dict:
     current = get_user_settings(primary_character_id)
-    current.update(kwargs)
+    current.update({k: v for k, v in kwargs.items() if k in _SETTINGS_DEFAULTS})
     conn = get_db()
     try:
         conn.execute(
@@ -293,8 +311,10 @@ def upsert_user_settings(primary_character_id: int, **kwargs) -> dict:
             INSERT OR REPLACE INTO user_settings
                 (primary_character_id, default_structure_id, default_system_id,
                  default_price_region, broker_fee, sales_tax, facility_tax,
-                 structure_me_bonus, structure_te_bonus, structure_cost_bonus)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+                 structure_me_bonus, structure_te_bonus, structure_cost_bonus,
+                 industry_level, adv_industry_level,
+                 warehouse_character_id, warehouse_location_id, warehouse_location_name)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 primary_character_id,
@@ -307,6 +327,11 @@ def upsert_user_settings(primary_character_id: int, **kwargs) -> dict:
                 current["structure_me_bonus"],
                 current["structure_te_bonus"],
                 current["structure_cost_bonus"],
+                current["industry_level"],
+                current["adv_industry_level"],
+                current["warehouse_character_id"],
+                current["warehouse_location_id"],
+                current["warehouse_location_name"],
             ),
         )
         conn.commit()
@@ -712,10 +737,13 @@ def store_assets(character_id: int, assets: list[dict]) -> None:
     try:
         conn.execute("DELETE FROM asset_cache WHERE character_id = ?", (character_id,))
         conn.executemany(
-            "INSERT INTO asset_cache (character_id, item_id, type_id, type_name, location_id, quantity, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO asset_cache "
+            "(character_id, item_id, type_id, type_name, location_id, quantity, updated_at, is_container, location_type) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             [(character_id, a["item_id"], a["type_id"], a.get("type_name", ""),
-              a["location_id"], a["quantity"], now) for a in assets],
+              a["location_id"], a["quantity"], now,
+              1 if a.get("is_container") else 0,
+              a.get("location_type", "")) for a in assets],
         )
         conn.commit()
     finally:
@@ -723,16 +751,51 @@ def store_assets(character_id: int, assets: list[dict]) -> None:
 
 
 def get_asset_locations(character_id: int) -> list[dict]:
-    """Return distinct locations with item counts from asset cache."""
-    return _query(
+    """
+    Return distinct locations (stations/structures + containers) with item counts.
+
+    Top-level locations are identified by finding location_ids that do NOT
+    appear as item_ids in the cache (i.e. they're external IDs like station/structure IDs).
+    Containers are top-level items (item_id IS in the cache) that have children.
+    """
+    # Top-level station/structure locations:
+    # location_id values that are NOT item_ids in this character's asset cache
+    stations = _query(
         """
-        SELECT location_id, COUNT(DISTINCT type_id) AS type_count,
-               SUM(quantity) AS total_quantity
-        FROM   asset_cache WHERE character_id = ?
-        GROUP  BY location_id ORDER BY total_quantity DESC
+        SELECT a.location_id AS loc_id,
+               '' AS container_name,
+               COUNT(DISTINCT a.type_id) AS type_count,
+               SUM(a.quantity)           AS total_quantity,
+               0 AS is_container
+        FROM   asset_cache a
+        WHERE  a.character_id = ?
+          AND  a.location_id NOT IN (
+                  SELECT item_id FROM asset_cache WHERE character_id = ?
+               )
+        GROUP  BY a.location_id
+        ORDER  BY total_quantity DESC
+        """,
+        (character_id, character_id),
+    )
+    # Containers: items whose item_id is itself a parent of other items
+    containers = _query(
+        """
+        SELECT c.item_id      AS loc_id,
+               c.type_name    AS container_name,
+               COUNT(DISTINCT i.type_id) AS type_count,
+               SUM(i.quantity)           AS total_quantity,
+               1 AS is_container
+        FROM   asset_cache c
+        JOIN   asset_cache i ON i.character_id = c.character_id
+                             AND i.location_id  = c.item_id
+        WHERE  c.character_id = ?
+          AND  c.is_container  = 1
+        GROUP  BY c.item_id
+        ORDER  BY total_quantity DESC
         """,
         (character_id,),
     )
+    return stations + containers
 
 
 def get_assets_at_location(character_id: int, location_id: int) -> list[dict]:

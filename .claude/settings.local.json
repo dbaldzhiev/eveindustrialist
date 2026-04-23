@@ -8,7 +8,10 @@
       "Bash(del \"c:\\\\Users\\\\db\\\\eveindustrialist\\\\frontend\\\\src\\\\pages\\\\ShoppingListPage.tsx\")",
       "Bash(npx tsc:*)",
       "Bash(python -m py_compile main.py)",
-      "Bash(node_modules/.bin/tsc --noEmit)"
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(npm install:*)",
+      "Bash(.venv/Scripts/python -c \"import sqlite3; c=sqlite3.connect\\('eve_industry.db'\\); print\\([r[0] for r in c.execute\\(\\\\\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\\\\\"\\).fetchall\\(\\)]\\)\")",
+      "Bash(.venv/Scripts/python -c ':*)"
     ]
   }
 }

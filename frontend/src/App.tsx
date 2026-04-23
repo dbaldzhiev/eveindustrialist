@@ -6,6 +6,7 @@ import ExplorerPage from "./pages/ExplorerPage";
 import WarehousePage from "./pages/WarehousePage";
 import SlotsPage from "./pages/SlotsPage";
 import PlansPage from "./pages/PlansPage";
+import SettingsPage from "./pages/SettingsPage";
 import { fetchMe } from "./api/client";
 import type { Character } from "./types";
 
@@ -51,6 +52,10 @@ export default function App() {
       <Route
         path="/plans"
         element={character ? <PlansPage character={character} /> : <Navigate to="/" replace />}
+      />
+      <Route
+        path="/settings"
+        element={character ? <SettingsPage character={character} /> : <Navigate to="/" replace />}
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

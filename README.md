@@ -56,9 +56,6 @@ cp .env.example .env
 
 # Download SDE data (run once, ~2-3 min)
 python setup_sde.py
-
-# Start the backend
-uvicorn main:app --reload --port 8000
 ```
 
 ---
@@ -68,8 +65,17 @@ uvicorn main:app --reload --port 8000
 ```bash
 cd frontend
 npm install
+```
+
+---
+
+### 4. Run both together
+
+```bash
 npm run dev
 ```
+
+This starts the backend (port 8000) and frontend (port 5173) together.
 
 Open [http://localhost:5173](http://localhost:5173)
 

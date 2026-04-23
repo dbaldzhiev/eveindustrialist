@@ -32,7 +32,7 @@ from esi import (
     get_character_skills, get_industry_skill_levels,
     get_character_jobs, get_character_assets,
     INDUSTRY_SKILL_IDS, MFG_ACTIVITIES, RESEARCH_ACTIVITIES, REACTION_ACTIVITIES,
-    ACTIVITY_NAMES,
+    ACTIVITY_NAMES, resolve_location_names,
 )
 from market import get_market_prices
 from profitability import calculate_blueprint_profit, ProfitSettings, calc_qty_with_me
@@ -186,15 +186,20 @@ def remove_character(character_id: int, session: str | None = Cookie(None)):
 # ---------------------------------------------------------------------------
 
 class UserSettingsIn(BaseModel):
-    default_structure_id: int | None = None
-    default_system_id:    int | None = None
-    default_price_region: int        = 10000002
-    broker_fee:           float      = 0.0368
-    sales_tax:            float      = 0.036
-    facility_tax:         float      = 0.0
-    structure_me_bonus:   float      = 0.0
-    structure_te_bonus:   float      = 0.0
-    structure_cost_bonus: float      = 0.0
+    default_structure_id:    int   | None = None
+    default_system_id:       int   | None = None
+    default_price_region:    int          = 10000002
+    broker_fee:              float        = 0.0368
+    sales_tax:               float        = 0.036
+    facility_tax:            float        = 0.0
+    structure_me_bonus:      float        = 0.0
+    structure_te_bonus:      float        = 0.0
+    structure_cost_bonus:    float        = 0.0
+    industry_level:          int          = 0
+    adv_industry_level:      int          = 0
+    warehouse_character_id:  int   | None = None
+    warehouse_location_id:   int   | None = None
+    warehouse_location_name: str   | None = None
 
 
 @app.get("/api/settings")
@@ -215,6 +220,11 @@ def put_settings(body: UserSettingsIn, session: str | None = Cookie(None)):
         structure_me_bonus=body.structure_me_bonus,
         structure_te_bonus=body.structure_te_bonus,
         structure_cost_bonus=body.structure_cost_bonus,
+        industry_level=body.industry_level,
+        adv_industry_level=body.adv_industry_level,
+        warehouse_character_id=body.warehouse_character_id,
+        warehouse_location_id=body.warehouse_location_id,
+        warehouse_location_name=body.warehouse_location_name,
     )
 
 
@@ -572,29 +582,38 @@ class AssetImportIn(BaseModel):
 
 @app.get("/api/warehouse")
 def warehouse_list(session: str | None = Cookie(None)):
-    """Return ESI assets (from cache) merged across all group characters."""
+    """
+    Return warehouse contents.
+    If a warehouse source (character + location) is configured in settings,
+    return only items from that location. Otherwise aggregate all hangar assets.
+    """
     char       = get_current_character(session)
     primary_id = int(char["uid"])
-    char_ids   = get_group_character_ids(primary_id)
+    settings   = get_user_settings(primary_id)
 
+    wh_char = settings.get("warehouse_character_id")
+    wh_loc  = settings.get("warehouse_location_id")
+
+    if wh_char and wh_loc:
+        # Specific source configured — return its items directly
+        items = get_assets_at_location(wh_char, wh_loc)
+        return sorted(items, key=lambda x: x["type_name"])
+
+    # No source set — aggregate all hangar assets across all characters
+    char_ids = get_group_character_ids(primary_id)
     grouped: dict[int, dict] = {}
     for cid in char_ids:
-        try:
-            assets = get_cached_assets(cid)
-            if assets is None:
-                continue
-        except Exception:
+        assets = get_cached_assets(cid)
+        if not assets:
             continue
         for item in assets:
+            # Skip container items themselves (is_container rows have quantity=1 but are not materials)
+            if item.get("is_container"):
+                continue
             tid = item["type_id"]
             if tid not in grouped:
-                grouped[tid] = {
-                    "type_id":   tid,
-                    "type_name": item["type_name"],
-                    "quantity":  0,
-                }
+                grouped[tid] = {"type_id": tid, "type_name": item["type_name"], "quantity": 0}
             grouped[tid]["quantity"] += item.get("quantity", 1)
-
     return sorted(grouped.values(), key=lambda x: x["type_name"])
 
 
@@ -623,7 +642,7 @@ def warehouse_sync(session: str | None = Cookie(None)):
     for cid in char_ids:
         try:
             token  = get_access_token(cid)
-            assets = get_character_assets(cid, token)
+            assets = get_character_assets(cid, token, force_refresh=True)
             all_items.extend(assets)
         except Exception:
             pass
@@ -646,25 +665,46 @@ def warehouse_sync(session: str | None = Cookie(None)):
 
 @app.get("/api/assets/locations")
 def asset_locations(session: str | None = Cookie(None)):
-    """Return distinct locations across all characters in the group."""
+    """
+    Return all distinct asset locations (stations + containers) across all
+    group characters, with resolved display names.
+    Triggers ESI fetch for any character whose cache is stale.
+    """
     char       = get_current_character(session)
     primary_id = int(char["uid"])
     char_ids   = get_group_character_ids(primary_id)
+    char_names = {c["character_id"]: c["character_name"]
+                  for c in get_group_characters(primary_id)}
 
     all_locations = []
+    all_station_ids: list[int] = []
+    char_tokens: dict[int, str] = {}
+
     for cid in char_ids:
         try:
             token = get_access_token(cid)
-            get_character_assets(cid, token)  # refreshes cache if needed
+            char_tokens[cid] = token
+            get_character_assets(cid, token, force_refresh=True)   # always fetch fresh
         except Exception:
             pass
-        char_name = next(
-            (c["character_name"] for c in get_group_characters(primary_id)
-             if c["character_id"] == cid),
-            f"Character {cid}",
-        )
         for loc in get_asset_locations(cid):
-            all_locations.append({**loc, "character_id": cid, "character_name": char_name})
+            loc["character_id"]   = cid
+            loc["character_name"] = char_names.get(cid, f"Character {cid}")
+            loc["location_name"]  = ""          # filled in below
+            all_locations.append(loc)
+            if not loc.get("is_container"):
+                all_station_ids.append(loc["loc_id"])
+
+    # Resolve station/system names; pass tokens for player structure lookups
+    name_map = resolve_location_names(
+        list(set(all_station_ids)),
+        char_tokens=list(char_tokens.values()),
+    )
+    for loc in all_locations:
+        if loc.get("is_container"):
+            loc["location_name"] = loc.get("container_name") or f"Container #{loc['loc_id']}"
+        else:
+            loc["location_name"] = name_map.get(loc["loc_id"], f"Location #{loc['loc_id']}")
 
     return all_locations
 

@@ -13,6 +13,7 @@ const TABS = [
   { to: "/explorer",  label: "Explorer"     },
   { to: "/warehouse", label: "Warehouse"    },
   { to: "/plans",     label: "Plans"        },
+  { to: "/settings",  label: "Settings"     },
 ];
 
 export default function Navbar({ character }: Props) {

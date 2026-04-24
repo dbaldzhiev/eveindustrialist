@@ -94,19 +94,32 @@ function bpParams(s: Settings) {
   };
 }
 
-export async function fetchBlueprints(settings: Settings): Promise<BlueprintResult[]> {
+export async function fetchBlueprints(
+  settings: Settings, 
+  forceRefresh: boolean = false, 
+  mode: string = "build",
+  decryptorStrategy: string = "none",
+  decryptorTypeId: number | null = null,
+): Promise<BlueprintResult[]> {
   const { data } = await api.get<BlueprintResult[]>("/api/blueprints", {
-    params: bpParams(settings),
+    params: { 
+      ...bpParams(settings), 
+      force_refresh: forceRefresh, 
+      mode,
+      decryptor_strategy: decryptorStrategy,
+      decryptor_type_id: decryptorTypeId,
+    },
   });
   return data;
 }
 
-export async function fetchExplore(settings: Settings): Promise<BlueprintResult[]> {
+export async function fetchExplore(settings: Settings, forceRefresh: boolean = false): Promise<BlueprintResult[]> {
   const { data } = await api.get<BlueprintResult[]>("/api/blueprints/explore", {
     params: {
       ...bpParams(settings),
       assumed_me: settings.assumed_me,
       assumed_te: settings.assumed_te,
+      force_refresh: forceRefresh,
     },
     timeout: 120_000,
   });
@@ -233,7 +246,39 @@ export async function saveAppSettings(settings: Partial<AppSettings>): Promise<A
 // Asset locations (warehouse source picker)
 // ---------------------------------------------------------------------------
 
+export interface Decryptor {
+  name:      string;
+  type_id:   number | null;
+  prob_mult: number;
+  me_mod:    number;
+  te_mod:    number;
+  runs_mod:  number;
+}
+
+export interface SuggestResult {
+  strategy:        string;
+  open_slots:      number;
+  suggested_items: BlueprintResult[];
+  reason?:         string;
+}
+
+export async function fetchSuggestedPlan(strategy: string = "profit"): Promise<SuggestResult> {
+  const { data } = await api.get<SuggestResult>("/api/plans/suggest", {
+    params: { strategy },
+  });
+  return data;
+}
+
 export async function fetchAssetLocations(): Promise<AssetLocation[]> {
   const { data } = await api.get<AssetLocation[]>("/api/assets/locations");
   return data;
+}
+
+export async function fetchDecryptors(): Promise<Decryptor[]> {
+  const { data } = await api.get<Decryptor[]>("/api/market/decryptors");
+  return data;
+}
+
+export async function refreshMarketPrices(): Promise<void> {
+  await api.post("/api/market/refresh");
 }

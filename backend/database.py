@@ -89,7 +89,16 @@ def init_db():
             facility_tax          REAL    NOT NULL DEFAULT 0.0,
             structure_me_bonus    REAL    NOT NULL DEFAULT 0.0,
             structure_te_bonus    REAL    NOT NULL DEFAULT 0.0,
-            structure_cost_bonus  REAL    NOT NULL DEFAULT 0.0
+            structure_cost_bonus  REAL    NOT NULL DEFAULT 0.0,
+            industry_level        INTEGER NOT NULL DEFAULT 0,
+            adv_industry_level    INTEGER NOT NULL DEFAULT 0,
+            runs                  INTEGER NOT NULL DEFAULT 1,
+            min_profit            REAL    NOT NULL DEFAULT 0.0,
+            material_order_type   TEXT    NOT NULL DEFAULT 'sell',
+            product_order_type    TEXT    NOT NULL DEFAULT 'sell',
+            warehouse_character_id INTEGER,
+            warehouse_location_id  INTEGER,
+            warehouse_location_name TEXT
         );
 
         -- Warehouse (shared per user group)
@@ -169,15 +178,21 @@ def _migrate(conn: sqlite3.Connection):
     # Add missing columns to existing tables (ALTER TABLE is idempotent via try/except)
     _add_column_if_missing(conn, "sessions",   "primary_character_id", "INTEGER")
     _add_column_if_missing(conn, "pkce_state", "link_to_primary_id",   "INTEGER")
+    # user_settings additions
+    _add_column_if_missing(conn, "user_settings", "industry_level",       "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "user_settings", "adv_industry_level",   "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "user_settings", "runs",                 "INTEGER NOT NULL DEFAULT 1")
+    _add_column_if_missing(conn, "user_settings", "min_profit",           "REAL    NOT NULL DEFAULT 0.0")
+    _add_column_if_missing(conn, "user_settings", "material_order_type",  "TEXT    NOT NULL DEFAULT 'sell'")
+    _add_column_if_missing(conn, "user_settings", "product_order_type",   "TEXT    NOT NULL DEFAULT 'sell'")
+    _add_column_if_missing(conn, "user_settings", "warehouse_character_id", "INTEGER")
+    _add_column_if_missing(conn, "user_settings", "warehouse_location_id",  "INTEGER")
+    _add_column_if_missing(conn, "user_settings", "warehouse_location_name", "TEXT")
+
     # asset_cache: container + location metadata
     _add_column_if_missing(conn, "asset_cache", "is_container",  "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(conn, "asset_cache", "location_type", "TEXT    NOT NULL DEFAULT ''")
-    # user_settings: skills + warehouse source
-    _add_column_if_missing(conn, "user_settings", "industry_level",       "INTEGER NOT NULL DEFAULT 0")
-    _add_column_if_missing(conn, "user_settings", "adv_industry_level",   "INTEGER NOT NULL DEFAULT 0")
-    _add_column_if_missing(conn, "user_settings", "warehouse_character_id", "INTEGER")
-    _add_column_if_missing(conn, "user_settings", "warehouse_location_id",  "INTEGER")
-    _add_column_if_missing(conn, "user_settings", "warehouse_location_name","TEXT")
+
 
     migrations = [
         "UPDATE sessions SET primary_character_id = character_id WHERE primary_character_id IS NULL",
@@ -282,6 +297,10 @@ _SETTINGS_DEFAULTS = {
     "structure_cost_bonus":   0.0,
     "industry_level":         0,
     "adv_industry_level":     0,
+    "runs":                   1,
+    "min_profit":             0.0,
+    "material_order_type":    "sell",
+    "product_order_type":     "sell",
     "warehouse_character_id": None,
     "warehouse_location_id":  None,
     "warehouse_location_name": None,
@@ -313,8 +332,9 @@ def upsert_user_settings(primary_character_id: int, **kwargs) -> dict:
                  default_price_region, broker_fee, sales_tax, facility_tax,
                  structure_me_bonus, structure_te_bonus, structure_cost_bonus,
                  industry_level, adv_industry_level,
+                 runs, min_profit, material_order_type, product_order_type,
                  warehouse_character_id, warehouse_location_id, warehouse_location_name)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 primary_character_id,
@@ -329,6 +349,10 @@ def upsert_user_settings(primary_character_id: int, **kwargs) -> dict:
                 current["structure_cost_bonus"],
                 current["industry_level"],
                 current["adv_industry_level"],
+                current["runs"],
+                current["min_profit"],
+                current["material_order_type"],
+                current["product_order_type"],
                 current["warehouse_character_id"],
                 current["warehouse_location_id"],
                 current["warehouse_location_name"],
@@ -340,11 +364,20 @@ def upsert_user_settings(primary_character_id: int, **kwargs) -> dict:
     return get_user_settings(primary_character_id)
 
 
+def clear_market_cache():
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM market_price_cache")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # SDE query helpers
 # ---------------------------------------------------------------------------
 
-def get_blueprints_data_batch(bp_type_ids: list[int]) -> dict[int, dict]:
+def get_blueprints_data_batch(bp_type_ids: list[int], activity_id: int = 1) -> dict[int, dict]:
     if not bp_type_ids:
         return {}
     result: dict[int, dict] = {
@@ -361,8 +394,8 @@ def get_blueprints_data_batch(bp_type_ids: list[int]) -> dict[int, dict]:
                        t.typeName AS name, m.quantity
                 FROM   industryActivityMaterials m
                 JOIN   invTypes t ON t.typeID = m.materialTypeID
-                WHERE  m.typeID IN ({ph}) AND m.activityID = 1
-                """, chunk,
+                WHERE  m.typeID IN ({ph}) AND m.activityID = ?
+                """, (*chunk, activity_id),
             ).fetchall():
                 result[row["bp_id"]]["materials"].append(
                     {"type_id": row["type_id"], "name": row["name"], "quantity": row["quantity"]}
@@ -373,8 +406,8 @@ def get_blueprints_data_batch(bp_type_ids: list[int]) -> dict[int, dict]:
                        t.typeName AS name, p.quantity
                 FROM   industryActivityProducts p
                 JOIN   invTypes t ON t.typeID = p.productTypeID
-                WHERE  p.typeID IN ({ph}) AND p.activityID = 1
-                """, chunk,
+                WHERE  p.typeID IN ({ph}) AND p.activityID = ?
+                """, (*chunk, activity_id),
             ).fetchall():
                 result[row["bp_id"]]["products"].append(
                     {"type_id": row["type_id"], "name": row["name"], "quantity": row["quantity"]}
@@ -383,13 +416,41 @@ def get_blueprints_data_batch(bp_type_ids: list[int]) -> dict[int, dict]:
                 f"""
                 SELECT typeID AS bp_id, time
                 FROM   industryActivity
-                WHERE  typeID IN ({ph}) AND activityID = 1
-                """, chunk,
+                WHERE  typeID IN ({ph}) AND activityID = ?
+                """, (*chunk, activity_id),
             ).fetchall():
                 result[row["bp_id"]]["time"] = row["time"]
     finally:
         conn.close()
     return result
+
+
+def get_invention_variants(bp_type_ids: list[int]) -> list[dict]:
+    """
+    Find T2 blueprint variants that can be invented from the given base BP IDs.
+    Returns list of {base_bp_id, result_bp_id, result_bp_name}
+    """
+    if not bp_type_ids:
+        return []
+    
+    conn = get_db()
+    results = []
+    try:
+        for chunk in _chunk(bp_type_ids):
+            ph = ",".join("?" * len(chunk))
+            for row in conn.execute(
+                f"""
+                SELECT p.typeID AS base_bp_id, p.productTypeID AS result_bp_id,
+                       t.typeName AS result_bp_name
+                FROM   industryActivityProducts p
+                JOIN   invTypes t ON t.typeID = p.productTypeID
+                WHERE  p.typeID IN ({ph}) AND p.activityID = 8
+                """, chunk,
+            ).fetchall():
+                results.append(dict(row))
+    finally:
+        conn.close()
+    return results
 
 
 def get_all_manufacturing_bp_ids() -> list[int]:
@@ -399,6 +460,16 @@ def get_all_manufacturing_bp_ids() -> list[int]:
         FROM   industryActivity a
         JOIN   invTypes t ON t.typeID = a.typeID
         WHERE  a.activityID = 1 AND t.published = 1
+        """
+    )
+    return [r["typeID"] for r in rows]
+
+
+def get_reaction_bp_ids() -> list[int]:
+    """Return typeIDs of blueprints that are used for Reactions (activity 11)."""
+    rows = _query(
+        """
+        SELECT DISTINCT typeID FROM industryActivity WHERE activityID = 11
         """
     )
     return [r["typeID"] for r in rows]

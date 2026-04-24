@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import (
-    init_db,
+    init_db, clear_market_cache,
     get_blueprints_data_batch, get_all_manufacturing_bp_ids, get_type_names_batch,
     get_type_volumes_batch,
     search_systems, get_regions, get_system_region,
@@ -21,6 +21,7 @@ from database import (
     get_asset_locations, get_assets_at_location, get_cached_assets,
     get_plans, create_plan, rename_plan, delete_plan,
     get_plan_items, add_plan_item, update_plan_item, remove_plan_item,
+    get_invention_variants, get_reaction_bp_ids,
     _chunk,
 )
 from auth import (
@@ -45,6 +46,19 @@ MARKET_HUBS = [
     {"region_id": 10000032, "name": "Sinq Laison (Dodixie)"},
     {"region_id": 10000030, "name": "Heimatar (Rens)"},
     {"region_id": 10000042, "name": "Metropolis (Hek)"},
+]
+
+# T2 Invention Decryptors
+DECRYPTORS = [
+    {"name": "None",       "type_id": None,  "prob_mult": 1.0, "me_mod": 0,  "te_mod": 0,  "runs_mod": 0},
+    {"name": "Symmetry",   "type_id": 34205, "prob_mult": 1.0, "me_mod": 1,  "te_mod": -1, "runs_mod": 0},
+    {"name": "Parity",     "type_id": 34201, "prob_mult": 1.5, "me_mod": 1,  "te_mod": -1, "runs_mod": 0},
+    {"name": "Augator",    "type_id": 34202, "prob_mult": 0.6, "me_mod": 4,  "te_mod": -1, "runs_mod": 0},
+    {"name": "Incunabula", "type_id": 34203, "prob_mult": 1.2, "me_mod": -2, "te_mod": 1,  "runs_mod": 1},
+    {"name": "Optimant",   "type_id": 34204, "prob_mult": 1.9, "me_mod": -2, "te_mod": 1,  "runs_mod": 1},
+    {"name": "Esoteric",   "type_id": 34206, "prob_mult": 0.6, "me_mod": 2,  "te_mod": -1, "runs_mod": 4},
+    {"name": "Occult",     "type_id": 34207, "prob_mult": 1.2, "me_mod": -1, "te_mod": 2,  "runs_mod": 3},
+    {"name": "Kamikaze",   "type_id": 34208, "prob_mult": 1.1, "me_mod": -3, "te_mod": 5,  "runs_mod": 9},
 ]
 
 
@@ -100,9 +114,69 @@ def _calc_profits_for_bps(
     solar_system_id: int,
     settings: ProfitSettings,
     min_profit: float,
+    force_refresh: bool = False,
+    mode: str = "build",
+    decryptor_strategy: str = "none",
+    decryptor_type_id: int | None = None,
+    primary_id: int | None = None,
+    include_materials: bool = True,
 ) -> list[dict]:
     bp_type_ids = [bp["type_id"] for bp in char_bps]
-    sde_data    = get_blueprints_data_batch(bp_type_ids)
+    
+    invention_bps = []
+    if mode == "invent":
+        unique_ids = list(set(bp_type_ids))
+        variants = get_invention_variants(unique_ids)
+        
+        # Decide which decryptors to test
+        test_decryptors = []
+        if decryptor_strategy == "specific":
+            test_decryptors = [d for d in DECRYPTORS if d["type_id"] == decryptor_type_id]
+        elif decryptor_strategy == "optimized":
+            test_decryptors = DECRYPTORS
+        else:
+            test_decryptors = [DECRYPTORS[0]] # "None"
+
+        # Build "Potential" BPCs for calculation
+        for var in variants:
+            for d in test_decryptors:
+                invention_bps.append({
+                    "type_id":      var["result_bp_id"],
+                    "type_name":    var["result_bp_name"] + " (Potential)",
+                    "quantity":     1,
+                    "me":           2 + d["me_mod"],
+                    "te":           4 + d["te_mod"],
+                    "is_bpo":       False,
+                    "is_invention": True,
+                    "decryptor":    d,
+                })
+        all_calc_bps = invention_bps
+    elif mode == "copy":
+        # Only owned BPOs that are NOT reactions (reactions can't be copied)
+        reaction_ids = set(get_reaction_bp_ids())
+        all_calc_bps = [
+            bp for bp in char_bps 
+            if (bp.get("quantity") == -1) and (bp["type_id"] not in reaction_ids)
+        ]
+    else:
+        # mode == "build"
+        all_calc_bps = char_bps
+    
+    calc_ids = [bp["type_id"] for bp in all_calc_bps]
+    sde_data = get_blueprints_data_batch(calc_ids)
+
+    # For "copy" mode, check matching BPCs in inventory
+    bpc_inventory: dict[int, list[dict]] = {}
+    if mode == "copy" and primary_id:
+        char_ids = get_group_character_ids(primary_id)
+        for cid in char_ids:
+            try:
+                for bp in get_character_blueprints(cid, get_access_token(cid)):
+                    if bp.get("quantity") != -1:
+                        tid = bp["type_id"]
+                        if tid not in bpc_inventory: bpc_inventory[tid] = []
+                        bpc_inventory[tid].append(bp)
+            except Exception: pass
 
     all_type_ids: set[int] = set()
     for data in sde_data.values():
@@ -113,20 +187,40 @@ def _calc_profits_for_bps(
     if not all_type_ids:
         return []
 
-    market_prices   = get_market_prices(list(all_type_ids), price_region_id)
+    market_prices   = get_market_prices(list(all_type_ids), price_region_id, force_refresh=force_refresh)
     adjusted_prices = {k: v for k, v in get_adjusted_prices().items() if k in all_type_ids}
     cost_index      = get_manufacturing_cost_index(solar_system_id)
 
+    if mode == "copy":
+        results = []
+        for bp in all_calc_bps:
+            data = sde_data.get(bp["type_id"], {})
+            product_id = data["products"][0]["type_id"] if data.get("products") else 0
+            d = {
+                "blueprint_type_id": bp["type_id"],
+                "blueprint_name":    bp["type_name"],
+                "product_type_id":   product_id,
+                "me": bp["me"], "te": bp["te"],
+                "is_bpo": True,
+            }
+            if bp.get("character_id"): d["character_id"] = bp["character_id"]
+            matching_bpcs = bpc_inventory.get(bp["type_id"], [])
+            d["bpc_count"] = len(matching_bpcs)
+            d["bpc_total_runs"] = sum(b.get("runs", 0) for b in matching_bpcs)
+            results.append(d)
+        return results
+
     results = []
-    for bp in char_bps:
+    for bp in all_calc_bps:
         data = sde_data.get(bp["type_id"], {})
         if not data.get("products"):
             continue
+
         result = calculate_blueprint_profit(
             blueprint_type_id=bp["type_id"],
             blueprint_name=bp["type_name"],
             me=bp["me"], te=bp["te"],
-            is_bpo=(bp["quantity"] == -1),
+            is_bpo=bp.get("is_bpo", bp.get("quantity") == -1),
             sde_materials=data["materials"],
             sde_products=data["products"],
             base_time_seconds=data["time"],
@@ -136,10 +230,28 @@ def _calc_profits_for_bps(
             settings=settings,
         )
         if result and result.profit >= min_profit:
-            d = result.to_api_dict()
+            d = result.to_api_dict(include_materials=include_materials)
             if bp.get("character_id"):
                 d["character_id"] = bp["character_id"]
+            if bp.get("is_invention"):
+                d["is_invention"] = True
+                d["decryptor_name"] = bp["decryptor"]["name"]
+            
+            if mode == "copy":
+                matching_bpcs = bpc_inventory.get(bp["type_id"], [])
+                d["bpc_count"] = len(matching_bpcs)
+                d["bpc_total_runs"] = sum(b.get("runs", 0) for b in matching_bpcs)
+
             results.append(d)
+
+    if mode == "invent" and decryptor_strategy == "optimized":
+        # Keep only the best result per T2 blueprint
+        best_per_id = {}
+        for r in results:
+            tid = r["blueprint_type_id"]
+            if tid not in best_per_id or r["profit"] > best_per_id[tid]["profit"]:
+                best_per_id[tid] = r
+        results = list(best_per_id.values())
 
     results.sort(key=lambda x: x["profit"], reverse=True)
     return results
@@ -197,6 +309,10 @@ class UserSettingsIn(BaseModel):
     structure_cost_bonus:    float        = 0.0
     industry_level:          int          = 0
     adv_industry_level:      int          = 0
+    runs:                    int          = 1
+    min_profit:              float        = 0.0
+    material_order_type:     str          = "sell"
+    product_order_type:      str          = "sell"
     warehouse_character_id:  int   | None = None
     warehouse_location_id:   int   | None = None
     warehouse_location_name: str   | None = None
@@ -222,6 +338,10 @@ def put_settings(body: UserSettingsIn, session: str | None = Cookie(None)):
         structure_cost_bonus=body.structure_cost_bonus,
         industry_level=body.industry_level,
         adv_industry_level=body.adv_industry_level,
+        runs=body.runs,
+        min_profit=body.min_profit,
+        material_order_type=body.material_order_type,
+        product_order_type=body.product_order_type,
         warehouse_character_id=body.warehouse_character_id,
         warehouse_location_id=body.warehouse_location_id,
         warehouse_location_name=body.warehouse_location_name,
@@ -245,6 +365,17 @@ def systems_search(q: str = Query(..., min_length=1)):
 @app.get("/api/market/hubs")
 def market_hubs():
     return MARKET_HUBS
+
+
+@app.post("/api/market/refresh")
+def market_refresh():
+    clear_market_cache()
+    return {"ok": True}
+
+
+@app.get("/api/market/decryptors")
+def market_decryptors():
+    return DECRYPTORS
 
 
 @app.get("/api/types/search")
@@ -276,6 +407,10 @@ def blueprints(
     material_order_type:  str   = Query("sell"),
     product_order_type:   str   = Query("sell"),
     min_profit:           float = Query(0.0),
+    force_refresh:        bool  = Query(False),
+    mode:                 str   = Query("build"),
+    decryptor_strategy:   str   = Query("none"),  # "none", "optimized", "specific"
+    decryptor_type_id:    int | None = Query(None),
     session: str | None = Cookie(None),
 ):
     char       = get_current_character(session)
@@ -293,7 +428,7 @@ def blueprints(
         except Exception:
             pass  # skip characters with expired tokens
 
-    if not all_bps:
+    if not all_bps and mode != "invent":
         return []
 
     # Fetch skills for primary character to adjust time calculations
@@ -305,7 +440,14 @@ def blueprints(
         industry_level=skills["industry"],
         adv_industry_level=skills["adv_industry"],
     )
-    return _calc_profits_for_bps(all_bps, price_region_id, solar_system_id, settings, min_profit)
+    return _calc_profits_for_bps(
+        all_bps, price_region_id, solar_system_id, settings, min_profit, 
+        force_refresh=force_refresh, 
+        mode=mode,
+        decryptor_strategy=decryptor_strategy,
+        decryptor_type_id=decryptor_type_id,
+        primary_id=primary_id
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +470,7 @@ def blueprints_explore(
     material_order_type:  str   = Query("sell"),
     product_order_type:   str   = Query("sell"),
     min_profit:           float = Query(0.0),
+    force_refresh:        bool  = Query(False),
     limit:                int   = Query(200,   ge=1, le=1000),
     session: str | None = Cookie(None),
 ):
@@ -361,7 +504,7 @@ def blueprints_explore(
     if not all_type_ids:
         return []
 
-    market_prices   = get_market_prices(list(all_type_ids), price_region_id)
+    market_prices   = get_market_prices(list(all_type_ids), price_region_id, force_refresh=force_refresh)
     adjusted_prices = {k: v for k, v in get_adjusted_prices().items() if k in all_type_ids}
     cost_index      = get_manufacturing_cost_index(solar_system_id)
     name_map        = get_type_names_batch(all_bp_ids)
@@ -822,6 +965,83 @@ def remove_from_plan(plan_id: int, item_id: int, session: str | None = Cookie(No
     _primary(session)
     if not remove_plan_item(plan_id, item_id):
         raise HTTPException(status_code=404, detail="Item not found")
+
+
+@app.get("/api/plans/suggest")
+def suggest_plan(strategy: str = "profit", session: str | None = Cookie(None)):
+    """
+    Suggest manufacturing runs to fill open slots.
+    strategy: "profit" (max ISK/h) or "materials" (max already owned in warehouse)
+    """
+    primary_id = _primary(session)
+    char_ids   = get_group_character_ids(primary_id)
+    
+    # 1. Find total open manufacturing slots
+    raw_slots = slots_dashboard(session)
+    total_open = sum(max(0, s["manufacturing"]["total"] - s["manufacturing"]["used"]) for s in raw_slots)
+    
+    if total_open <= 0:
+        return {"suggested_items": [], "reason": "No open manufacturing slots available"}
+
+    # 2. Get user settings for calculations
+    settings_raw = get_user_settings(primary_id)
+    if not settings_raw.get("default_system_id"):
+         raise HTTPException(status_code=400, detail="Default manufacturing system not configured")
+
+    skills = get_industry_skill_levels(primary_id, get_access_token(primary_id))
+    p_settings = _profit_settings(
+        settings_raw["runs"], settings_raw["broker_fee"], settings_raw["sales_tax"], settings_raw["facility_tax"],
+        settings_raw["structure_me_bonus"], settings_raw["structure_te_bonus"], settings_raw["structure_cost_bonus"],
+        settings_raw["material_order_type"], settings_raw["product_order_type"],
+        industry_level=skills["industry"], adv_industry_level=skills["adv_industry"],
+    )
+
+    # 3. Fetch all character blueprints
+    all_bps: list[dict] = []
+    for cid in char_ids:
+        try:
+            all_bps.extend(get_character_blueprints(cid, get_access_token(cid)))
+        except Exception: pass
+
+    if not all_bps:
+        return {"suggested_items": [], "reason": "No blueprints found in assets"}
+
+    # Calculate full profit/material data
+    results = _calc_profits_for_bps(
+        all_bps, settings_raw["default_price_region"], settings_raw["default_system_id"], 
+        p_settings, min_profit=-1e15, include_materials=True
+    )
+
+    # 4. Rank items based on strategy
+    if strategy == "profit":
+        results.sort(key=lambda x: x["isk_per_hour"], reverse=True)
+    elif strategy == "materials":
+        # Percentage of total material quantity already owned in group assets
+        warehouse: dict[int, int] = {}
+        for cid in char_ids:
+            assets = get_cached_assets(cid)
+            if assets:
+                for a in assets:
+                    tid = a["type_id"]
+                    warehouse[tid] = warehouse.get(tid, 0) + a.get("quantity", 1)
+        
+        def material_score(bp):
+            mats = bp.get("materials", [])
+            if not mats: return 0
+            total_needed = sum(m["quantity"] for m in mats)
+            if total_needed == 0: return 1.0
+            owned = sum(min(m["quantity"], warehouse.get(m["type_id"], 0)) for m in mats)
+            return owned / total_needed
+
+        results.sort(key=material_score, reverse=True)
+
+    # 5. Suggest top N to fill slots
+    suggested = results[:total_open]
+    return {
+        "strategy": strategy,
+        "open_slots": total_open,
+        "suggested_items": suggested
+    }
 
 
 @app.get("/api/plans/{plan_id}/summary")

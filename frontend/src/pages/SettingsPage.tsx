@@ -63,6 +63,10 @@ const DEFAULTS: AppSettings = {
   structure_cost_bonus:    0.0,
   industry_level:          0,
   adv_industry_level:      0,
+  runs:                    1,
+  min_profit:              0.0,
+  material_order_type:     "sell",
+  product_order_type:      "sell",
   warehouse_character_id:  null,
   warehouse_location_id:   null,
   warehouse_location_name: null,
@@ -150,7 +154,7 @@ export default function SettingsPage({ character }: Props) {
             {/* Market */}
             <section className="bg-eve-surface border border-eve-border rounded-lg p-4 space-y-4">
               <h2 className="text-xs font-semibold uppercase tracking-widest text-eve-muted">
-                Market
+                Market & Defaults
               </h2>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Market Hub">
@@ -165,10 +169,46 @@ export default function SettingsPage({ character }: Props) {
                     ))}
                   </select>
                 </Field>
+                <NumField label="Default runs per blueprint" value={settings.runs}
+                  onChange={(v) => set("runs", v)} min={1} max={10000} />
+
+                <Field label="Buy Materials via">
+                  <select
+                    value={settings.material_order_type}
+                    onChange={(e) => set("material_order_type", e.target.value as any)}
+                    className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
+                               text-sm text-eve-text focus:outline-none focus:border-eve-orange"
+                  >
+                    <option value="sell">Sell Orders (immediate)</option>
+                    <option value="buy">Buy Orders (cheaper)</option>
+                  </select>
+                </Field>
+                <Field label="Sell Products via">
+                  <select
+                    value={settings.product_order_type}
+                    onChange={(e) => set("product_order_type", e.target.value as any)}
+                    className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
+                               text-sm text-eve-text focus:outline-none focus:border-eve-orange"
+                  >
+                    <option value="sell">Sell Orders (higher)</option>
+                    <option value="buy">Buy Orders (instant)</option>
+                  </select>
+                </Field>
+
                 <PctField label="Broker Fee %" value={settings.broker_fee}
                   onChange={(v) => set("broker_fee", v)} max={10} />
                 <PctField label="Sales Tax %" value={settings.sales_tax}
                   onChange={(v) => set("sales_tax", v)} max={10} />
+
+                <Field label="Minimum Profit (ISK)">
+                  <input
+                    type="number" min="0"
+                    value={settings.min_profit}
+                    onChange={(e) => set("min_profit", parseFloat(e.target.value) || 0)}
+                    className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
+                               text-sm text-eve-text focus:outline-none focus:border-eve-orange"
+                  />
+                </Field>
               </div>
             </section>
 

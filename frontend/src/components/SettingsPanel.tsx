@@ -6,10 +6,9 @@ import { fetchMarketHubs } from "../api/client";
 
 interface Props {
   settings: Settings;
-  system: SolarSystem | null;
-  onSystemChange: (sys: SolarSystem) => void;
   onChange: (s: Settings) => void;
   onApply: () => void;
+  onRefresh?: () => void;
   loading: boolean;
   /** Extra fields shown only in Explorer mode */
   explorerMode?: boolean;
@@ -105,16 +104,13 @@ function SkillInput({
 
 export default function SettingsPanel({
   settings,
-  system,
-  onSystemChange,
   onChange,
   onApply,
+  onRefresh,
   loading,
   explorerMode = false,
 }: Props) {
   const [hubs, setHubs] = useState<MarketHub[]>([]);
-  const [showStructure, setShowStructure] = useState(false);
-  const [showSkills, setShowSkills] = useState(false);
 
   useEffect(() => {
     fetchMarketHubs().then(setHubs).catch(() => {});
@@ -131,29 +127,13 @@ export default function SettingsPanel({
         <h2 className="text-xs font-semibold uppercase tracking-widest text-eve-muted">
           Settings
         </h2>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowSkills((p) => !p)}
-            className="text-xs text-eve-muted hover:text-eve-orange transition-colors"
-          >
-            {showSkills ? "Hide" : "Show"} Skills
-          </button>
-          <button
-            onClick={() => setShowStructure((p) => !p)}
-            className="text-xs text-eve-muted hover:text-eve-orange transition-colors"
-          >
-            {showStructure ? "Hide" : "Show"} Structure Bonuses
-          </button>
+        <div className="text-[10px] text-eve-muted/50 uppercase tracking-tight">
+          Facility bonuses applied from global settings
         </div>
       </div>
 
       {/* Main row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 items-end">
-        <div className="col-span-2 sm:col-span-1 lg:col-span-2 flex flex-col gap-1">
-          <span className="text-xs text-eve-muted">Manufacturing System</span>
-          <SystemPicker value={system} onChange={onSystemChange} />
-        </div>
-
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 items-end">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-eve-muted">Runs per BP</span>
           <input
@@ -167,13 +147,6 @@ export default function SettingsPanel({
           />
         </label>
 
-        <PctInput label="Broker Fee"   value={settings.broker_fee}   field="broker_fee"   onChange={set} />
-        <PctInput label="Sales Tax"    value={settings.sales_tax}    field="sales_tax"    onChange={set} />
-        <PctInput label="Facility Tax" value={settings.facility_tax} field="facility_tax" onChange={set} />
-      </div>
-
-      {/* Market source row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 items-end">
         {hubOptions.length > 0 && (
           <SelectInput
             label="Market Hub"
@@ -182,6 +155,35 @@ export default function SettingsPanel({
             onChange={(v) => set("price_region_id", parseInt(v))}
           />
         )}
+
+        {explorerMode && (
+          <div className="grid grid-cols-2 gap-2 col-span-2 sm:col-span-1 lg:col-span-1">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-eve-muted whitespace-nowrap">Assume ME</span>
+              <input
+                type="number" min="0" max="10"
+                value={settings.assumed_me}
+                onChange={(e) => set("assumed_me", parseInt(e.target.value) || 0)}
+                className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
+                           text-sm text-eve-text focus:outline-none focus:border-eve-orange"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-eve-muted whitespace-nowrap">Assume TE</span>
+              <input
+                type="number" min="0" max="20"
+                value={settings.assumed_te}
+                onChange={(e) => set("assumed_te", parseInt(e.target.value) || 0)}
+                className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
+                           text-sm text-eve-text focus:outline-none focus:border-eve-orange"
+              />
+            </label>
+          </div>
+        )}
+      </div>
+
+      {/* Market source row */}
+      <div className="grid grid-cols-2 gap-4 items-end">
         <SelectInput
           label="Buy Materials via"
           value={settings.material_order_type}
@@ -200,98 +202,7 @@ export default function SettingsPanel({
           ]}
           onChange={(v) => set("product_order_type", v)}
         />
-
-        {explorerMode && (
-          <>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-eve-muted">Assume ME</span>
-              <input
-                type="number" min="0" max="10"
-                value={settings.assumed_me}
-                onChange={(e) => set("assumed_me", parseInt(e.target.value) || 0)}
-                className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
-                           text-sm text-eve-text focus:outline-none focus:border-eve-orange"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-eve-muted">Assume TE</span>
-              <input
-                type="number" min="0" max="20"
-                value={settings.assumed_te}
-                onChange={(e) => set("assumed_te", parseInt(e.target.value) || 0)}
-                className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
-                           text-sm text-eve-text focus:outline-none focus:border-eve-orange"
-              />
-            </label>
-          </>
-        )}
       </div>
-
-      {/* Character skills (collapsible) */}
-      {showSkills && (
-        <div className="pt-2 border-t border-eve-border/50 space-y-2">
-          <div className="text-xs text-eve-muted font-semibold">Character Skills</div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <SkillInput
-              label="Industry (0–5)"
-              value={settings.industry_level}
-              field="industry_level"
-              onChange={set}
-            />
-            <SkillInput
-              label="Adv. Industry (0–5)"
-              value={settings.adv_industry_level}
-              field="adv_industry_level"
-              onChange={set}
-            />
-          </div>
-          <div className="text-xs text-eve-muted/70">
-            Industry: −4% mfg time/level · Advanced Industry: −3% mfg time/level
-          </div>
-        </div>
-      )}
-
-      {/* Structure bonuses (collapsible) */}
-      {showStructure && (
-        <div className="pt-2 border-t border-eve-border/50 space-y-2">
-          <div className="text-xs text-eve-muted font-semibold">Structure Bonuses</div>
-          <div className="grid grid-cols-3 gap-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-eve-muted">ME Bonus %</span>
-              <input
-                type="number" min="0" max="5" step="0.1"
-                value={settings.structure_me_bonus}
-                onChange={(e) => set("structure_me_bonus", parseFloat(e.target.value) || 0)}
-                className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
-                           text-sm text-eve-text focus:outline-none focus:border-eve-orange"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-eve-muted">TE Bonus %</span>
-              <input
-                type="number" min="0" max="30" step="0.1"
-                value={settings.structure_te_bonus}
-                onChange={(e) => set("structure_te_bonus", parseFloat(e.target.value) || 0)}
-                className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
-                           text-sm text-eve-text focus:outline-none focus:border-eve-orange"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-eve-muted">Cost Bonus %</span>
-              <input
-                type="number" min="0" max="25" step="0.1"
-                value={settings.structure_cost_bonus}
-                onChange={(e) => set("structure_cost_bonus", parseFloat(e.target.value) || 0)}
-                className="w-full bg-eve-bg border border-eve-border rounded px-3 py-1.5
-                           text-sm text-eve-text focus:outline-none focus:border-eve-orange"
-              />
-            </label>
-          </div>
-          <div className="text-xs text-eve-muted/70">
-            Raitaru: 1% ME, 15% TE, 3% Cost &nbsp;·&nbsp; Azbel: 2% ME, 20% TE, 4% Cost
-          </div>
-        </div>
-      )}
 
       {/* Bottom row: min profit + apply button */}
       <div className="flex items-center gap-4 pt-1">
@@ -308,16 +219,29 @@ export default function SettingsPanel({
           <span>ISK</span>
         </label>
 
-        <button
-          onClick={onApply}
-          disabled={loading || !settings.solar_system_id}
-          className="ml-auto px-6 py-2 bg-eve-orange hover:bg-eve-orange/90
-                     disabled:opacity-40 disabled:cursor-not-allowed
-                     text-white text-sm font-semibold rounded
-                     transition-colors active:scale-95"
-        >
-          {loading ? "Loading…" : "Calculate Profits"}
-        </button>
+        <div className="ml-auto flex items-center gap-3">
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={loading}
+              className="px-4 py-2 text-eve-orange border border-eve-orange/30 hover:bg-eve-orange/10
+                         disabled:opacity-40 disabled:cursor-not-allowed
+                         text-sm font-semibold rounded transition-colors"
+            >
+              Refresh Prices
+            </button>
+          )}
+          <button
+            onClick={onApply}
+            disabled={loading || !settings.solar_system_id}
+            className="px-6 py-2 bg-eve-orange hover:bg-eve-orange/90
+                       disabled:opacity-40 disabled:cursor-not-allowed
+                       text-white text-sm font-semibold rounded
+                       transition-colors active:scale-95"
+          >
+            {loading ? "Loading…" : "Calculate Profits"}
+          </button>
+        </div>
       </div>
     </div>
   );

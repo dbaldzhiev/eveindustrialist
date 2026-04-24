@@ -9,7 +9,9 @@ interface Props {
 
 const TABS = [
   { to: "/slots",     label: "Dashboard"    },
-  { to: "/dashboard", label: "My Blueprints" },
+  { to: "/dashboard", label: "To Be Built"  },
+  { to: "/invention", label: "To Be Invented" },
+  { to: "/copying",   label: "To Be Copied" },
   { to: "/explorer",  label: "Explorer"     },
   { to: "/warehouse", label: "Warehouse"    },
   { to: "/plans",     label: "Plans"        },

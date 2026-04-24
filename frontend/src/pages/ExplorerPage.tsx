@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import SettingsPanel from "../components/SettingsPanel";
 import BlueprintTable from "../components/BlueprintTable";
-import { fetchExplore } from "../api/client";
+import { fetchExplore, fetchAppSettings } from "../api/client";
 import { DEFAULT_SETTINGS, StatCard, Spinner, fmtISK } from "./DashboardPage";
 import type { BlueprintResult, Character, Settings, SolarSystem } from "../types";
 
@@ -12,19 +12,41 @@ interface Props {
 
 export default function ExplorerPage({ character }: Props) {
   const [settings, setSettings]     = useState<Settings>(DEFAULT_SETTINGS);
-  const [system, setSystem]         = useState<SolarSystem | null>(null);
   const [blueprints, setBlueprints] = useState<BlueprintResult[]>([]);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [hasLoaded, setHasLoaded]   = useState(false);
 
-  const handleSystemChange = (sys: SolarSystem) => {
-    setSystem(sys);
-    setSettings((prev) => ({ ...prev, solar_system_id: sys.solar_system_id }));
-  };
+  // Fetch global settings on mount
+  useEffect(() => {
+    fetchAppSettings()
+      .then((appSettings) => {
+        setSettings((prev) => ({
+          ...prev,
+          solar_system_id:      appSettings.default_system_id,
+          price_region_id:      appSettings.default_price_region,
+          broker_fee:           appSettings.broker_fee,
+          sales_tax:            appSettings.sales_tax,
+          facility_tax:         appSettings.facility_tax,
+          structure_me_bonus:   appSettings.structure_me_bonus,
+          structure_te_bonus:   appSettings.structure_te_bonus,
+          structure_cost_bonus: appSettings.structure_cost_bonus,
+          industry_level:       appSettings.industry_level,
+          adv_industry_level:   appSettings.adv_industry_level,
+          runs:                 appSettings.runs,
+          min_profit:           appSettings.min_profit,
+          material_order_type:  appSettings.material_order_type,
+          product_order_type:   appSettings.product_order_type,
+        }));
+      })
+      .catch((err) => console.error("Failed to fetch app settings:", err));
+  }, []);
 
   const handleApply = async () => {
-    if (!settings.solar_system_id) return;
+    if (!settings.solar_system_id) {
+      setError("No manufacturing system configured. Please set one in Settings.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -33,6 +55,18 @@ export default function ExplorerPage({ character }: Props) {
       setHasLoaded(true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load blueprints");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setLoading(true);
+    try {
+      const results = await fetchExplore(settings, true);
+      setBlueprints(results);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to refresh prices");
     } finally {
       setLoading(false);
     }
@@ -53,10 +87,9 @@ export default function ExplorerPage({ character }: Props) {
 
         <SettingsPanel
           settings={settings}
-          system={system}
-          onSystemChange={handleSystemChange}
           onChange={setSettings}
           onApply={handleApply}
+          onRefresh={handleRefresh}
           loading={loading}
           explorerMode
         />

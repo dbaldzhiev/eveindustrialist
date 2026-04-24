@@ -48,8 +48,8 @@ class BlueprintProfit:
     product_quantity:  int = 0
     materials: list[MaterialLine] = field(default_factory=list)
 
-    def to_api_dict(self) -> dict:
-        return {
+    def to_api_dict(self, include_materials: bool = True) -> dict:
+        d = {
             "blueprint_type_id": self.blueprint_type_id,
             "blueprint_name":    self.blueprint_name,
             "product_type_id":   self.product_type_id,
@@ -67,7 +67,9 @@ class BlueprintProfit:
             "isk_per_hour":      round(self.isk_per_hour, 2),
             "sell_price":        round(self.sell_price, 2),
             "product_quantity":  self.product_quantity,
-            "materials": [
+        }
+        if include_materials:
+            d["materials"] = [
                 {
                     "type_id":    m.type_id,
                     "name":       m.name,
@@ -76,8 +78,8 @@ class BlueprintProfit:
                     "total_cost": round(m.total_cost, 2),
                 }
                 for m in self.materials
-            ],
-        }
+            ]
+        return d
 
 
 def calc_qty_with_me(base_qty: int, me: int, structure_me_bonus: float = 0.0) -> int:

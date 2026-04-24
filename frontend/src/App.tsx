@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
+import InventionPage from "./pages/InventionPage";
+import CopyingPage from "./pages/CopyingPage";
 import ExplorerPage from "./pages/ExplorerPage";
 import WarehousePage from "./pages/WarehousePage";
 import SlotsPage from "./pages/SlotsPage";
@@ -40,6 +42,14 @@ export default function App() {
       <Route
         path="/dashboard"
         element={character ? <DashboardPage character={character} /> : <Navigate to="/" replace />}
+      />
+      <Route
+        path="/invention"
+        element={character ? <InventionPage character={character} /> : <Navigate to="/" replace />}
+      />
+      <Route
+        path="/copying"
+        element={character ? <CopyingPage character={character} /> : <Navigate to="/" replace />}
       />
       <Route
         path="/explorer"

@@ -13,7 +13,7 @@ CACHE_TTL    = 1800   # 30 minutes
 BATCH_SIZE   = 100    # Fuzzwork request limit
 
 
-def get_market_prices(type_ids: list[int], region_id: int) -> dict[int, dict]:
+def get_market_prices(type_ids: list[int], region_id: int, force_refresh: bool = False) -> dict[int, dict]:
     """
     Return {type_id: {buy: float, sell: float}}.
     buy  = best buy-order price (95th percentile)
@@ -23,7 +23,7 @@ def get_market_prices(type_ids: list[int], region_id: int) -> dict[int, dict]:
         return {}
 
     db     = get_db()
-    cutoff = time.time() - CACHE_TTL
+    cutoff = 0 if force_refresh else (time.time() - CACHE_TTL)
 
     # Cache check — chunked to respect SQLite's 999-variable limit
     result: dict[int, dict] = {}

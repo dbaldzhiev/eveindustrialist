@@ -35,15 +35,20 @@ export interface MaterialLine {
 
 export interface BlueprintResult {
   blueprint_type_id: number;
-  blueprint_name: string;
-  product_type_id: number;
-  product_name: string;
-  me: number;
-  te: number;
-  runs: number;
-  is_bpo: boolean;
-  material_cost: number;
-  job_cost: number;
+  blueprint_name:    string;
+  product_type_id:   number;
+  product_name:      string;
+  me:                number;
+  te:                number;
+  runs:              number;
+  is_bpo:            boolean;
+  is_invention?:     boolean;
+  decryptor_name?:   string;
+  bpc_count?:        number;
+  bpc_total_runs?:   number;
+  material_cost:     number;
+  job_cost:          number;
+
   total_cost: number;
   revenue: number;
   profit: number;
@@ -198,6 +203,10 @@ export interface AppSettings {
   structure_cost_bonus:    number;
   industry_level:          number;
   adv_industry_level:      number;
+  runs:                    number;
+  min_profit:              number;
+  material_order_type:     "sell" | "buy";
+  product_order_type:      "sell" | "buy";
   warehouse_character_id:  number | null;
   warehouse_location_id:   number | null;
   warehouse_location_name: string | null;

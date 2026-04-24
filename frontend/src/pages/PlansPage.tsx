@@ -4,8 +4,10 @@ import {
   fetchPlans, createPlan, deletePlan,
   fetchPlanItems, addPlanItem, deletePlanItem,
   fetchPlanStats, fetchPlanShoppingList,
-  searchBlueprintsApi,
+  searchBlueprintsApi, fetchAppSettings,
+  fetchSuggestedPlan,
 } from "../api/client";
+import type { SuggestResult } from "../api/client";
 import type {
   Character, Plan, PlanItem, PlanStats, PlanShoppingResult, Settings,
 } from "../types";
@@ -184,11 +186,36 @@ function PlanDetail({
   const [loadingStats, setLoadingStats] = useState(false);
   const [loadingShopping, setLoadingShopping] = useState(false);
   const [copied, setCopied]             = useState(false);
-  const [settings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [settings, setSettings]         = useState<Settings>(DEFAULT_SETTINGS);
 
   const loadItems = () => {
     fetchPlanItems(plan.id).then(setItems).catch(() => {});
   };
+
+  useEffect(() => {
+    loadItems();
+    fetchAppSettings()
+      .then((app) => {
+        setSettings((prev) => ({
+          ...prev,
+          solar_system_id:      app.default_system_id,
+          price_region_id:      app.default_price_region,
+          broker_fee:           app.broker_fee,
+          sales_tax:            app.sales_tax,
+          facility_tax:         app.facility_tax,
+          structure_me_bonus:   app.structure_me_bonus,
+          structure_te_bonus:   app.structure_te_bonus,
+          structure_cost_bonus: app.structure_cost_bonus,
+          industry_level:       app.industry_level,
+          adv_industry_level:   app.adv_industry_level,
+          runs:                 app.runs,
+          min_profit:           app.min_profit,
+          material_order_type:  app.material_order_type,
+          product_order_type:   app.product_order_type,
+        }));
+      })
+      .catch(() => {});
+  }, [plan.id]);
 
   const loadStats = () => {
     setLoadingStats(true);
@@ -205,8 +232,6 @@ function PlanDetail({
       .catch(() => {})
       .finally(() => setLoadingShopping(false));
   };
-
-  useEffect(() => { loadItems(); }, [plan.id]);
 
   const handleDeleteItem = async (itemId: number) => {
     await deletePlanItem(plan.id, itemId);
@@ -443,11 +468,51 @@ export default function PlansPage({ character }: Props) {
   const [newName, setNewName]   = useState("");
   const [creating, setCreating] = useState(false);
 
+  const [suggestResult, setSuggestResult]   = useState<SuggestResult | null>(null);
+  const [loadingSuggest, setLoadingSuggest] = useState(false);
+
   const loadPlans = () => {
     fetchPlans().then(setPlans).catch(() => {});
   };
 
   useEffect(() => { loadPlans(); }, []);
+
+  const handleSuggest = async (strategy: string) => {
+    setLoadingSuggest(true);
+    setSuggestResult(null);
+    try {
+      const res = await fetchSuggestedPlan(strategy);
+      setSuggestResult(res);
+    } catch (e: any) {
+      alert(e.message || "Failed to get suggestions");
+    } finally {
+      setLoadingSuggest(false);
+    }
+  };
+
+  const handleSaveSuggested = async () => {
+    if (!suggestResult || suggestResult.suggested_items.length === 0) return;
+    setCreating(true);
+    try {
+      const name = `Auto Plan (${suggestResult.strategy} @ ${new Date().toLocaleTimeString()})`;
+      const plan = await createPlan(name);
+      for (const item of suggestResult.suggested_items) {
+        await addPlanItem(plan.id, {
+          blueprint_type_id: item.blueprint_type_id,
+          blueprint_name:    item.blueprint_name,
+          product_type_id:   item.product_type_id,
+          product_name:      item.product_name,
+          runs: item.runs,
+          me:   item.me,
+          te:   item.te,
+        });
+      }
+      setSuggestResult(null);
+      loadPlans();
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const handleCreate = async () => {
     const name = newName.trim();
@@ -516,6 +581,61 @@ export default function PlansPage({ character }: Props) {
               {creating ? "Creating…" : "Create"}
             </button>
           </div>
+        </div>
+
+        {/* Auto Suggest */}
+        <div className="bg-eve-surface border border-eve-border rounded-lg p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-eve-muted">
+              Auto-Suggest Plan
+            </h2>
+            <div className="text-[10px] text-eve-muted uppercase">Fill open character slots</div>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => handleSuggest("profit")}
+              disabled={loadingSuggest || creating}
+              className="flex-1 px-4 py-2 bg-eve-bg border border-eve-orange/30 hover:border-eve-orange text-eve-orange text-xs font-bold rounded transition-colors"
+            >
+              {loadingSuggest ? "Finding..." : "Most Profitable"}
+            </button>
+            <button
+              onClick={() => handleSuggest("materials")}
+              disabled={loadingSuggest || creating}
+              className="flex-1 px-4 py-2 bg-eve-bg border border-eve-blue/30 hover:border-eve-blue text-eve-blue text-xs font-bold rounded transition-colors"
+            >
+              {loadingSuggest ? "Finding..." : "Minimum Materials"}
+            </button>
+          </div>
+
+          {suggestResult && (
+            <div className="bg-eve-bg/50 border border-eve-border rounded p-3 space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-eve-muted">
+                  Found <span className="text-eve-text font-bold">{suggestResult.suggested_items.length}</span> items to fill <span className="text-eve-text font-bold">{suggestResult.open_slots}</span> slots
+                </span>
+                <button 
+                  onClick={handleSaveSuggested}
+                  disabled={creating}
+                  className="text-eve-orange font-bold uppercase hover:underline"
+                >
+                  {creating ? "Saving..." : "Save as Plan"}
+                </button>
+              </div>
+              <div className="space-y-1">
+                {suggestResult.suggested_items.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between text-[11px] border-b border-eve-border/30 pb-1">
+                    <span className="text-eve-text truncate max-w-[200px]">{item.blueprint_name}</span>
+                    <span className="text-eve-muted">
+                      {suggestResult.strategy === "profit" 
+                        ? `${isk(item.isk_per_hour)}/h` 
+                        : "In Inventory"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Plans list */}

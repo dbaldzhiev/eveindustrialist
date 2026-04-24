@@ -98,7 +98,11 @@ def init_db():
             product_order_type    TEXT    NOT NULL DEFAULT 'sell',
             warehouse_character_id INTEGER,
             warehouse_location_id  INTEGER,
-            warehouse_location_name TEXT
+            warehouse_location_name TEXT,
+            reaction_facility_tax REAL    NOT NULL DEFAULT 0.0,
+            reaction_me_bonus     REAL    NOT NULL DEFAULT 0.0,
+            reaction_te_bonus     REAL    NOT NULL DEFAULT 0.0,
+            reaction_cost_bonus   REAL    NOT NULL DEFAULT 0.0
         );
 
         -- Warehouse (shared per user group)
@@ -188,6 +192,10 @@ def _migrate(conn: sqlite3.Connection):
     _add_column_if_missing(conn, "user_settings", "warehouse_character_id", "INTEGER")
     _add_column_if_missing(conn, "user_settings", "warehouse_location_id",  "INTEGER")
     _add_column_if_missing(conn, "user_settings", "warehouse_location_name", "TEXT")
+    _add_column_if_missing(conn, "user_settings", "reaction_facility_tax", "REAL NOT NULL DEFAULT 0.0")
+    _add_column_if_missing(conn, "user_settings", "reaction_me_bonus",     "REAL NOT NULL DEFAULT 0.0")
+    _add_column_if_missing(conn, "user_settings", "reaction_te_bonus",     "REAL NOT NULL DEFAULT 0.0")
+    _add_column_if_missing(conn, "user_settings", "reaction_cost_bonus",   "REAL NOT NULL DEFAULT 0.0")
 
     # asset_cache: container + location metadata
     _add_column_if_missing(conn, "asset_cache", "is_container",  "INTEGER NOT NULL DEFAULT 0")
@@ -304,6 +312,10 @@ _SETTINGS_DEFAULTS = {
     "warehouse_character_id": None,
     "warehouse_location_id":  None,
     "warehouse_location_name": None,
+    "reaction_facility_tax":  0.0,
+    "reaction_me_bonus":      0.0,
+    "reaction_te_bonus":      0.0,
+    "reaction_cost_bonus":    0.0,
 }
 
 
@@ -333,8 +345,9 @@ def upsert_user_settings(primary_character_id: int, **kwargs) -> dict:
                  structure_me_bonus, structure_te_bonus, structure_cost_bonus,
                  industry_level, adv_industry_level,
                  runs, min_profit, material_order_type, product_order_type,
-                 warehouse_character_id, warehouse_location_id, warehouse_location_name)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 warehouse_character_id, warehouse_location_id, warehouse_location_name,
+                 reaction_facility_tax, reaction_me_bonus, reaction_te_bonus, reaction_cost_bonus)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 primary_character_id,
@@ -356,6 +369,10 @@ def upsert_user_settings(primary_character_id: int, **kwargs) -> dict:
                 current["warehouse_character_id"],
                 current["warehouse_location_id"],
                 current["warehouse_location_name"],
+                current["reaction_facility_tax"],
+                current["reaction_me_bonus"],
+                current["reaction_te_bonus"],
+                current["reaction_cost_bonus"],
             ),
         )
         conn.commit()
@@ -465,6 +482,18 @@ def get_all_manufacturing_bp_ids() -> list[int]:
     return [r["typeID"] for r in rows]
 
 
+def get_all_reaction_bp_ids() -> list[int]:
+    rows = _query(
+        """
+        SELECT DISTINCT a.typeID
+        FROM   industryActivity a
+        JOIN   invTypes t ON t.typeID = a.typeID
+        WHERE  a.activityID = 11 AND t.published = 1
+        """
+    )
+    return [r["typeID"] for r in rows]
+
+
 def get_reaction_bp_ids() -> list[int]:
     """Return typeIDs of blueprints that are used for Reactions (activity 11)."""
     rows = _query(
@@ -520,6 +549,28 @@ def get_type_volumes_batch(type_ids: list[int]) -> dict[int, float]:
                 chunk,
             ).fetchall():
                 result[row["typeID"]] = float(row["packagedVolume"] or row["volume"] or 0.0)
+    finally:
+        conn.close()
+    return result
+
+
+def get_type_categories_batch(type_ids: list[int]) -> dict[int, str]:
+    if not type_ids:
+        return {}
+    result: dict[int, str] = {}
+    conn = get_db()
+    try:
+        for chunk in _chunk(type_ids):
+            ph = ",".join("?" * len(chunk))
+            sql = f"""
+                SELECT t.typeID, c.categoryName
+                FROM   invTypes t
+                JOIN   invGroups g ON g.groupID = t.groupID
+                JOIN   invCategories c ON c.categoryID = g.categoryID
+                WHERE  t.typeID IN ({ph})
+            """
+            for row in conn.execute(sql, chunk).fetchall():
+                result[row["typeID"]] = row["categoryName"]
     finally:
         conn.close()
     return result

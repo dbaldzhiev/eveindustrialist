@@ -11,7 +11,7 @@ load_dotenv()
 from database import (
     init_db, clear_market_cache,
     get_blueprints_data_batch, get_all_manufacturing_bp_ids, get_type_names_batch,
-    get_type_volumes_batch,
+    get_type_volumes_batch, get_type_categories_batch,
     search_systems, get_regions, get_system_region,
     search_types, search_blueprints,
     get_structures, create_structure, delete_structure,
@@ -111,7 +111,7 @@ def _profit_settings(
 def _calc_profits_for_bps(
     char_bps: list[dict],
     price_region_id: int,
-    solar_system_id: int,
+    solar_system_id: int | None,
     settings: ProfitSettings,
     min_profit: float,
     force_refresh: bool = False,
@@ -120,6 +120,7 @@ def _calc_profits_for_bps(
     decryptor_type_id: int | None = None,
     primary_id: int | None = None,
     include_materials: bool = True,
+    individual: bool = False,
 ) -> list[dict]:
     bp_type_ids = [bp["type_id"] for bp in char_bps]
     
@@ -158,12 +159,18 @@ def _calc_profits_for_bps(
             bp for bp in char_bps 
             if (bp.get("quantity") == -1) and (bp["type_id"] not in reaction_ids)
         ]
+    elif mode == "react":
+        # Only owned reaction formulas (activity 11)
+        reaction_ids = set(get_reaction_bp_ids())
+        all_calc_bps = [bp for bp in char_bps if bp["type_id"] in reaction_ids]
     else:
         # mode == "build"
         all_calc_bps = char_bps
     
     calc_ids = [bp["type_id"] for bp in all_calc_bps]
-    sde_data = get_blueprints_data_batch(calc_ids)
+    # Use activity 11 for SDE data if in react mode
+    sde_activity = 11 if mode == "react" else 1
+    sde_data = get_blueprints_data_batch(calc_ids, activity_id=sde_activity)
 
     # For "copy" mode, check matching BPCs in inventory
     bpc_inventory: dict[int, list[dict]] = {}
@@ -187,9 +194,10 @@ def _calc_profits_for_bps(
     if not all_type_ids:
         return []
 
-    market_prices   = get_market_prices(list(all_type_ids), price_region_id, force_refresh=force_refresh)
-    adjusted_prices = {k: v for k, v in get_adjusted_prices().items() if k in all_type_ids}
-    cost_index      = get_manufacturing_cost_index(solar_system_id)
+    market_prices   = get_market_prices(list(all_type_ids), price_region_id, force_refresh=force_refresh) if solar_system_id else {}
+    adjusted_prices = ({k: v for k, v in get_adjusted_prices().items() if k in all_type_ids} if solar_system_id else {})
+    cost_index      = get_manufacturing_cost_index(solar_system_id) if solar_system_id else 0.0
+    category_map    = get_type_categories_batch(list(all_type_ids))
 
     if mode == "copy":
         results = []
@@ -200,8 +208,15 @@ def _calc_profits_for_bps(
                 "blueprint_type_id": bp["type_id"],
                 "blueprint_name":    bp["type_name"],
                 "product_type_id":   product_id,
+                "product_name":      data["products"][0]["name"] if data.get("products") else "Unknown",
                 "me": bp["me"], "te": bp["te"],
+                "runs": 1,
                 "is_bpo": True,
+                "category_name": category_map.get(product_id, "Unknown"),
+                "material_cost": 0, "job_cost": 0, "total_cost": 0,
+                "revenue": 0, "profit": 0, "margin_pct": 0,
+                "isk_per_hour": 0, "sell_price": 0, "product_quantity": 0,
+                "materials": [],
             }
             if bp.get("character_id"): d["character_id"] = bp["character_id"]
             matching_bpcs = bpc_inventory.get(bp["type_id"], [])
@@ -210,11 +225,101 @@ def _calc_profits_for_bps(
             results.append(d)
         return results
 
-    results = []
+    if individual:
+        results = []
+        for bp in all_calc_bps:
+            data = sde_data.get(bp["type_id"], {})
+            if not data.get("products"):
+                continue
+            qty_indicator = bp.get("quantity", 1)
+            is_bpo = (qty_indicator == -1)
+            bp_runs = settings.runs if is_bpo else max(1, bp.get("runs", 1))
+            bp_settings = ProfitSettings(
+                broker_fee=settings.broker_fee,
+                sales_tax=settings.sales_tax,
+                facility_tax=settings.facility_tax,
+                runs=bp_runs,
+                structure_me_bonus=settings.structure_me_bonus,
+                structure_te_bonus=settings.structure_te_bonus,
+                structure_cost_bonus=settings.structure_cost_bonus,
+                material_order_type=settings.material_order_type,
+                product_order_type=settings.product_order_type,
+                industry_level=settings.industry_level,
+                adv_industry_level=settings.adv_industry_level,
+            )
+            result = calculate_blueprint_profit(
+                blueprint_type_id=bp["type_id"],
+                blueprint_name=bp["type_name"],
+                me=bp["me"], te=bp["te"],
+                is_bpo=is_bpo,
+                sde_materials=data["materials"],
+                sde_products=data["products"],
+                base_time_seconds=data["time"],
+                market_prices=market_prices,
+                adjusted_prices=adjusted_prices,
+                system_cost_index=cost_index,
+                settings=bp_settings,
+            )
+            if result:
+                d = result.to_api_dict(include_materials=True)
+                d["category_name"] = category_map.get(d["product_type_id"], "Unknown")
+                if bp.get("item_id"):
+                    d["item_id"] = bp["item_id"]
+                results.append(d)
+        return results
+
+    # Aggregate identical blueprints (same type, ME, TE, etc.)
+    aggregated_bps: dict[tuple, dict] = {}
     for bp in all_calc_bps:
+        # EVE ESI: quantity is -1 for BPO, -2 for BPC. actual runs are in 'runs' field for BPCs.
+        qty_indicator = bp.get("quantity", 1)
+        is_bpo = (qty_indicator == -1)
+        
+        # For invention, decryptor name is part of the identity
+        d_name = bp.get("decryptor", {}).get("name") if bp.get("decryptor") else None
+        
+        key = (bp["type_id"], bp["me"], bp["te"], is_bpo, d_name)
+        if key not in aggregated_bps:
+            aggregated_bps[key] = dict(bp)
+            # Initialize aggregate runs: BPOs use indicators, BPCs will sum actual runs
+            if not is_bpo:
+                aggregated_bps[key]["runs"] = 0
+        
+        if not is_bpo:
+            # Sum the actual runs field from ESI for BPCs
+            aggregated_bps[key]["runs"] += bp.get("runs", 1)
+
+    results = []
+    for bp in aggregated_bps.values():
         data = sde_data.get(bp["type_id"], {})
         if not data.get("products"):
             continue
+
+        # Use actual blueprint runs if available (BPC), else use global setting (BPO)
+        qty_indicator = bp.get("quantity", 1)
+        if qty_indicator == -1:
+            # BPO: use dashboard setting
+            bp_runs = settings.runs
+        else:
+            # BPC: use the summed runs we calculated during aggregation
+            bp_runs = bp.get("runs", 1)
+        
+        # Create a per-blueprint settings object with correct runs
+        
+        # Create a per-blueprint settings object with correct runs
+        bp_settings = ProfitSettings(
+            broker_fee=settings.broker_fee,
+            sales_tax=settings.sales_tax,
+            facility_tax=settings.facility_tax,
+            runs=bp_runs,
+            structure_me_bonus=settings.structure_me_bonus,
+            structure_te_bonus=settings.structure_te_bonus,
+            structure_cost_bonus=settings.structure_cost_bonus,
+            material_order_type=settings.material_order_type,
+            product_order_type=settings.product_order_type,
+            industry_level=settings.industry_level,
+            adv_industry_level=settings.adv_industry_level,
+        )
 
         result = calculate_blueprint_profit(
             blueprint_type_id=bp["type_id"],
@@ -227,10 +332,11 @@ def _calc_profits_for_bps(
             market_prices=market_prices,
             adjusted_prices=adjusted_prices,
             system_cost_index=cost_index,
-            settings=settings,
+            settings=bp_settings,
         )
         if result and result.profit >= min_profit:
             d = result.to_api_dict(include_materials=include_materials)
+            d["category_name"] = category_map.get(d["product_type_id"], "Unknown")
             if bp.get("character_id"):
                 d["character_id"] = bp["character_id"]
             if bp.get("is_invention"):
@@ -316,6 +422,10 @@ class UserSettingsIn(BaseModel):
     warehouse_character_id:  int   | None = None
     warehouse_location_id:   int   | None = None
     warehouse_location_name: str   | None = None
+    reaction_facility_tax:   float        = 0.0
+    reaction_me_bonus:       float        = 0.0
+    reaction_te_bonus:       float        = 0.0
+    reaction_cost_bonus:     float        = 0.0
 
 
 @app.get("/api/settings")
@@ -345,6 +455,10 @@ def put_settings(body: UserSettingsIn, session: str | None = Cookie(None)):
         warehouse_character_id=body.warehouse_character_id,
         warehouse_location_id=body.warehouse_location_id,
         warehouse_location_name=body.warehouse_location_name,
+        reaction_facility_tax=body.reaction_facility_tax,
+        reaction_me_bonus=body.reaction_me_bonus,
+        reaction_te_bonus=body.reaction_te_bonus,
+        reaction_cost_bonus=body.reaction_cost_bonus,
     )
 
 
@@ -389,13 +503,79 @@ def blueprints_search(q: str = Query(..., min_length=2), session: str | None = C
     return search_blueprints(q, limit=20)
 
 
+@app.get("/api/blueprints/detail")
+def blueprint_detail(
+    blueprint_type_id:    int   = Query(...),
+    me:                   int   = Query(0, ge=0, le=10),
+    te:                   int   = Query(0, ge=0, le=20),
+    runs:                 int   = Query(1, ge=1),
+    solar_system_id:      int   | None = Query(None),
+    price_region_id:      int   = Query(10000002),
+    broker_fee:           float = Query(0.0368),
+    sales_tax:            float = Query(0.0360),
+    facility_tax:         float = Query(0.0),
+    structure_me_bonus:   float = Query(0.0),
+    structure_te_bonus:   float = Query(0.0),
+    structure_cost_bonus: float = Query(0.0),
+    material_order_type:  str   = Query("sell"),
+    product_order_type:   str   = Query("sell"),
+    industry_level:       int   = Query(0),
+    adv_industry_level:   int   = Query(0),
+    session: str | None = Cookie(None),
+):
+    """Full profit + material breakdown for a single blueprint. solar_system_id is optional."""
+    get_current_character(session)
+
+    sde_map = get_blueprints_data_batch([blueprint_type_id])
+    data    = sde_map.get(blueprint_type_id, {})
+    if not data or not data.get("products"):
+        raise HTTPException(status_code=404, detail="Blueprint not found or has no products")
+
+    all_type_ids: set[int] = (
+        {m["type_id"] for m in data["materials"]}
+        | {p["type_id"] for p in data["products"]}
+    )
+
+    market_prices   = get_market_prices(list(all_type_ids), price_region_id) if solar_system_id else {}
+    adjusted_prices = {k: v for k, v in get_adjusted_prices().items() if k in all_type_ids}
+    cost_index      = get_manufacturing_cost_index(solar_system_id) if solar_system_id else 0.0
+
+    settings = _profit_settings(
+        runs, broker_fee, sales_tax, facility_tax,
+        structure_me_bonus, structure_te_bonus, structure_cost_bonus,
+        material_order_type, product_order_type, industry_level, adv_industry_level,
+    )
+
+    name_map = get_type_names_batch([blueprint_type_id])
+    bp_name  = name_map.get(blueprint_type_id, f"Blueprint [{blueprint_type_id}]")
+
+    result = calculate_blueprint_profit(
+        blueprint_type_id=blueprint_type_id,
+        blueprint_name=bp_name,
+        me=me, te=te, is_bpo=True,
+        sde_materials=data["materials"],
+        sde_products=data["products"],
+        base_time_seconds=data["time"],
+        market_prices=market_prices,
+        adjusted_prices=adjusted_prices,
+        system_cost_index=cost_index,
+        settings=settings,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Calculation failed")
+
+    d = result.to_api_dict()
+    d["category_name"] = get_type_categories_batch(list(all_type_ids)).get(d["product_type_id"], "Unknown")
+    return d
+
+
 # ---------------------------------------------------------------------------
 # My Blueprints (aggregated from all characters in the group)
 # ---------------------------------------------------------------------------
 
 @app.get("/api/blueprints")
 def blueprints(
-    solar_system_id:      int   = Query(...),
+    solar_system_id:      int   | None = Query(None),
     price_region_id:      int   = Query(10000002),
     runs:                 int   = Query(1,      ge=1, le=10000),
     broker_fee:           float = Query(0.0368, ge=0, le=0.20),
@@ -411,12 +591,13 @@ def blueprints(
     mode:                 str   = Query("build"),
     decryptor_strategy:   str   = Query("none"),  # "none", "optimized", "specific"
     decryptor_type_id:    int | None = Query(None),
+    individual:           bool  = Query(False),
     session: str | None = Cookie(None),
 ):
     char       = get_current_character(session)
     primary_id = int(char["uid"])
 
-    if get_system_region(solar_system_id) is None:
+    if solar_system_id is not None and get_system_region(solar_system_id) is None:
         raise HTTPException(status_code=400, detail="Unknown solar system")
 
     char_ids = get_group_character_ids(primary_id)
@@ -446,7 +627,8 @@ def blueprints(
         mode=mode,
         decryptor_strategy=decryptor_strategy,
         decryptor_type_id=decryptor_type_id,
-        primary_id=primary_id
+        primary_id=primary_id,
+        individual=individual,
     )
 
 
@@ -508,6 +690,7 @@ def blueprints_explore(
     adjusted_prices = {k: v for k, v in get_adjusted_prices().items() if k in all_type_ids}
     cost_index      = get_manufacturing_cost_index(solar_system_id)
     name_map        = get_type_names_batch(all_bp_ids)
+    category_map    = get_type_categories_batch(list(all_type_ids))
 
     results = []
     for bp_id in all_bp_ids:
@@ -527,7 +710,91 @@ def blueprints_explore(
             settings=settings,
         )
         if result and result.profit >= min_profit:
-            results.append(result.to_api_dict())
+            d = result.to_api_dict()
+            d["category_name"] = category_map.get(d["product_type_id"], "Unknown")
+            results.append(d)
+
+    results.sort(key=lambda x: x["profit"], reverse=True)
+    return results[:limit]
+
+
+@app.get("/api/blueprints/reactions/explore")
+def reactions_explore(
+    solar_system_id:      int   = Query(...),
+    price_region_id:      int   = Query(10000002),
+    runs:                 int   = Query(1,     ge=1, le=10000),
+    broker_fee:           float = Query(0.0368, ge=0, le=0.20),
+    sales_tax:            float = Query(0.0360, ge=0, le=0.20),
+    facility_tax:         float = Query(0.0,    ge=0, le=0.25),
+    structure_me_bonus:   float = Query(0.0,    ge=0, le=5),
+    structure_te_bonus:   float = Query(0.0,    ge=0, le=30),
+    structure_cost_bonus: float = Query(0.0,    ge=0, le=25),
+    material_order_type:  str   = Query("sell"),
+    product_order_type:   str   = Query("sell"),
+    min_profit:           float = Query(0.0),
+    force_refresh:        bool  = Query(False),
+    limit:                int   = Query(200,   ge=1, le=1000),
+    session: str | None = Cookie(None),
+):
+    char       = get_current_character(session)
+    primary_id = int(char["uid"])
+
+    if get_system_region(solar_system_id) is None:
+        raise HTTPException(status_code=400, detail="Unknown solar system")
+
+    skills = get_industry_skill_levels(int(char["sub"]), get_access_token(int(char["sub"])))
+    settings = _profit_settings(
+        runs, broker_fee, sales_tax, facility_tax,
+        structure_me_bonus, structure_te_bonus, structure_cost_bonus,
+        material_order_type, product_order_type,
+        industry_level=skills["industry"],
+        adv_industry_level=skills["adv_industry"],
+    )
+
+    all_bp_ids = get_all_reaction_bp_ids()
+    if not all_bp_ids:
+        return []
+
+    # Activity 11 is Reactions
+    sde_data = get_blueprints_data_batch(all_bp_ids, activity_id=11)
+
+    all_type_ids: set[int] = set()
+    for data in sde_data.values():
+        if data["products"]:
+            all_type_ids.update(m["type_id"] for m in data["materials"])
+            all_type_ids.update(p["type_id"] for p in data["products"])
+
+    if not all_type_ids:
+        return []
+
+    market_prices   = get_market_prices(list(all_type_ids), price_region_id, force_refresh=force_refresh)
+    adjusted_prices = {k: v for k, v in get_adjusted_prices().items() if k in all_type_ids}
+    cost_index      = get_manufacturing_cost_index(solar_system_id)
+    name_map        = get_type_names_batch(all_bp_ids)
+    category_map    = get_type_categories_batch(list(all_type_ids))
+
+    results = []
+    for bp_id in all_bp_ids:
+        data = sde_data.get(bp_id, {})
+        if not data.get("products"):
+            continue
+        # Reactions don't have ME/TE levels (they are always 0)
+        result = calculate_blueprint_profit(
+            blueprint_type_id=bp_id,
+            blueprint_name=name_map.get(bp_id, f"Unknown [{bp_id}]"),
+            me=0, te=0, is_bpo=True,
+            sde_materials=data["materials"],
+            sde_products=data["products"],
+            base_time_seconds=data["time"],
+            market_prices=market_prices,
+            adjusted_prices=adjusted_prices,
+            system_cost_index=cost_index,
+            settings=settings,
+        )
+        if result and result.profit >= min_profit:
+            d = result.to_api_dict()
+            d["category_name"] = category_map.get(d["product_type_id"], "Unknown")
+            results.append(d)
 
     results.sort(key=lambda x: x["profit"], reverse=True)
     return results[:limit]
@@ -726,9 +993,7 @@ class AssetImportIn(BaseModel):
 @app.get("/api/warehouse")
 def warehouse_list(session: str | None = Cookie(None)):
     """
-    Return warehouse contents.
-    If a warehouse source (character + location) is configured in settings,
-    return only items from that location. Otherwise aggregate all hangar assets.
+    Return warehouse contents with category and estimated prices.
     """
     char       = get_current_character(session)
     primary_id = int(char["uid"])
@@ -737,27 +1002,37 @@ def warehouse_list(session: str | None = Cookie(None)):
     wh_char = settings.get("warehouse_character_id")
     wh_loc  = settings.get("warehouse_location_id")
 
+    items = []
     if wh_char and wh_loc:
-        # Specific source configured — return its items directly
         items = get_assets_at_location(wh_char, wh_loc)
-        return sorted(items, key=lambda x: x["type_name"])
+    else:
+        char_ids = get_group_character_ids(primary_id)
+        grouped: dict[int, dict] = {}
+        for cid in char_ids:
+            assets = get_cached_assets(cid)
+            if assets:
+                for item in assets:
+                    if item.get("is_container"): continue
+                    tid = item["type_id"]
+                    if tid not in grouped:
+                        grouped[tid] = {"type_id": tid, "type_name": item["type_name"], "quantity": 0}
+                    grouped[tid]["quantity"] += item.get("quantity", 1)
+        items = list(grouped.values())
 
-    # No source set — aggregate all hangar assets across all characters
-    char_ids = get_group_character_ids(primary_id)
-    grouped: dict[int, dict] = {}
-    for cid in char_ids:
-        assets = get_cached_assets(cid)
-        if not assets:
-            continue
-        for item in assets:
-            # Skip container items themselves (is_container rows have quantity=1 but are not materials)
-            if item.get("is_container"):
-                continue
-            tid = item["type_id"]
-            if tid not in grouped:
-                grouped[tid] = {"type_id": tid, "type_name": item["type_name"], "quantity": 0}
-            grouped[tid]["quantity"] += item.get("quantity", 1)
-    return sorted(grouped.values(), key=lambda x: x["type_name"])
+    if not items:
+        return []
+
+    type_ids     = [i["type_id"] for i in items]
+    category_map = get_type_categories_batch(type_ids)
+    prices       = get_market_prices(type_ids, settings["default_price_region"])
+
+    for item in items:
+        tid = item["type_id"]
+        item["category_name"] = category_map.get(tid, "Unknown")
+        # Use sell price as estimated value
+        item["estimated_price"] = prices.get(tid, {}).get("sell", 0.0)
+
+    return sorted(items, key=lambda x: x["type_name"])
 
 
 @app.put("/api/warehouse/items")

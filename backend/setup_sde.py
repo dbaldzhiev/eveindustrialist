@@ -106,6 +106,29 @@ TABLES = {
             )
         """,
     },
+    "invGroups": {
+        "filename": "invGroups.csv.bz2",
+        "columns":  ["groupID", "categoryID", "groupName", "published"],
+        "create": """
+            CREATE TABLE IF NOT EXISTS invGroups (
+                groupID     INTEGER PRIMARY KEY,
+                categoryID  INTEGER,
+                groupName   TEXT,
+                published   INTEGER
+            )
+        """,
+    },
+    "invCategories": {
+        "filename": "invCategories.csv.bz2",
+        "columns":  ["categoryID", "categoryName", "published"],
+        "create": """
+            CREATE TABLE IF NOT EXISTS invCategories (
+                categoryID    INTEGER PRIMARY KEY,
+                categoryName  TEXT,
+                published     INTEGER
+            )
+        """,
+    },
 }
 
 INDEX_SQL = [

@@ -1,27 +1,8 @@
-import React, { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
 import { fetchBlueprints, fetchAppSettings } from "../api/client";
-import { StatCard, Spinner } from "./DashboardPage";
+import { DEFAULT_SETTINGS, StatCard, Spinner } from "./DashboardPage";
 import type { BlueprintResult, Character, Settings } from "../types";
-
-export const DEFAULT_SETTINGS: Settings = {
-  solar_system_id:      null,
-  runs:                 1,
-  broker_fee:           0.0368,
-  sales_tax:            0.0360,
-  facility_tax:         0.0,
-  min_profit:           0,
-  price_region_id:      10000002,
-  material_order_type:  "sell",
-  product_order_type:   "sell",
-  structure_me_bonus:   0,
-  structure_te_bonus:   0,
-  structure_cost_bonus: 0,
-  assumed_me:           10,
-  assumed_te:           20,
-  industry_level:       0,
-  adv_industry_level:   0,
-};
 
 interface Props {
   character: Character;
@@ -32,33 +13,31 @@ export default function CopyingPage({ character }: Props) {
   const [blueprints, setBlueprints] = useState<BlueprintResult[]>([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
-  const [hasLoaded, setHasLoaded]   = useState(false);
 
-  const [showMissingOnly, setShowMissingOnly] = useState(false);
+  // Filters
+  const [filterWithBpcs, setFilterWithBpcs] = useState(true);
+  const [filterNoBpcs, setFilterNoBpcs]     = useState(true);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   useEffect(() => {
     async function init() {
       try {
         const appSettings = await fetchAppSettings();
-        if (!appSettings) {
-          setError("Failed to load application settings.");
-          setLoading(false);
-          return;
-        }
-
-        const newSettings: Settings = {
+        const s: Settings = {
           ...DEFAULT_SETTINGS,
-          solar_system_id:      appSettings.default_system_id ?? null,
-          price_region_id:      appSettings.default_price_region ?? 10000002,
+          solar_system_id: appSettings.default_system_id,
+          price_region_id: appSettings.default_price_region,
         };
-        setSettings(newSettings);
+        setSettings(s);
 
-        // Fetch BPO status
-        const results = await fetchBlueprints(newSettings, false, "copy");
-        setBlueprints(results);
-        setHasLoaded(true);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Failed to load blueprints");
+        if (s.solar_system_id) {
+          const results = await fetchBlueprints(s, false, "copy");
+          setBlueprints(results);
+        } else {
+          setError("Please configure a solar system in Settings.");
+        }
+      } catch (e: any) {
+        setError(e.message);
       } finally {
         setLoading(false);
       }
@@ -66,107 +45,91 @@ export default function CopyingPage({ character }: Props) {
     init();
   }, []);
 
-  const handleRefresh = async () => {
-    setLoading(true);
-    try {
-      const results = await fetchBlueprints(settings, true, "copy");
-      setBlueprints(results);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to refresh");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const categories = useMemo(() => {
+    const cats = new Set<string>();
+    blueprints.forEach(b => { if (b.category_name) cats.add(b.category_name); });
+    return Array.from(cats).sort();
+  }, [blueprints]);
 
   const filtered = useMemo(() => {
-    return blueprints.filter(bp => !showMissingOnly || (bp.bpc_count || 0) === 0);
-  }, [blueprints, showMissingOnly]);
+    return blueprints.filter(bp => {
+      const hasBpcs = (bp.bpc_count || 0) > 0;
+      if (hasBpcs && !filterWithBpcs) return false;
+      if (!hasBpcs && !filterNoBpcs) return false;
+      if (selectedCategories.length > 0 && bp.category_name && !selectedCategories.includes(bp.category_name)) return false;
+      return true;
+    });
+  }, [blueprints, filterWithBpcs, filterNoBpcs, selectedCategories]);
 
-  const needCopies = blueprints.filter(bp => (bp.bpc_count || 0) === 0).length;
+  const handleToggleCategory = (cat: string) => {
+    setSelectedCategories(prev => 
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+    );
+  };
 
   return (
     <div className="min-h-screen bg-eve-bg font-eve">
       <Navbar character={character} />
-
       <main className="max-w-screen-2xl mx-auto px-4 py-6 space-y-5">
-        <div className="bg-eve-surface/50 border border-eve-blue/30 rounded-lg px-4 py-2 text-xs text-eve-muted">
-          <span className="text-eve-blue font-semibold uppercase mr-2">Blueprint Original (BPO) Status</span>
-          Identifies BPOs that need copying for manufacturing or invention.
-        </div>
-
-        {/* Action Banner */}
-        {!loading && hasLoaded && (
-          <div className="bg-eve-surface border border-eve-border rounded-lg px-4 py-2 flex items-center justify-between text-xs text-eve-muted">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] uppercase font-bold text-eve-muted/60">Filters:</span>
-                <button
-                  onClick={() => setShowMissingOnly(!showMissingOnly)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-colors border
-                    ${showMissingOnly 
-                      ? "bg-eve-orange/20 border-eve-orange text-eve-orange" 
-                      : "bg-eve-bg border-eve-border text-eve-muted"}`}
-                >
-                  Missing Only
-                </button>
-              </div>
-
-              <button
-                onClick={handleRefresh}
-                className="text-eve-orange hover:text-eve-orange/80 font-semibold uppercase tracking-tighter transition-colors"
-              >
-                Refresh Inventory
-              </button>
+        
+        {/* Filters Header */}
+        <div className="bg-eve-surface border border-eve-border rounded-lg px-4 py-3 flex flex-wrap items-center gap-6 text-xs">
+          <div className="flex items-center gap-2 border-r border-eve-border pr-6">
+            <span className="text-eve-muted font-bold uppercase text-[9px]">Inventory:</span>
+            <div className="flex gap-1">
+               <FilterBtn label="With BPCs" active={filterWithBpcs} onClick={() => setFilterWithBpcs(!filterWithBpcs)} color="border-green-500 text-green-400 bg-green-500/10" />
+               <FilterBtn label="No BPCs" active={filterNoBpcs} onClick={() => setFilterNoBpcs(!filterNoBpcs)} color="border-red-500 text-red-400 bg-red-500/10" />
             </div>
           </div>
-        )}
 
-        {hasLoaded && !loading && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard label="Total BPOs" value={blueprints.length.toString()} />
-            <StatCard label="Needs Copying" value={needCopies.toString()} accent={needCopies > 0} />
+          <div className="flex flex-wrap gap-1 items-center">
+            <span className="text-eve-muted font-bold uppercase text-[9px] mr-2">Categories:</span>
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => handleToggleCategory(cat)}
+                className={`px-2 py-0.5 rounded border transition-colors ${
+                  selectedCategories.includes(cat)
+                    ? "bg-eve-orange/20 border-eve-orange text-eve-orange"
+                    : "bg-eve-bg border-eve-border text-eve-muted"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
-        {error && (
-          <div className="bg-red-900/30 border border-red-700/50 rounded-lg px-4 py-3 text-red-300 text-sm">
-            {error}
-          </div>
-        )}
+        {loading && <Spinner label="Loading owned BPOs and BPC counts..." />}
+        {error && <div className="text-red-400">{error}</div>}
 
-        {loading && <Spinner label="Checking BPO status across characters..." />}
-
-        {!loading && hasLoaded && (
-          <div className="overflow-x-auto rounded-lg border border-eve-border">
-            <table className="w-full text-sm">
-              <thead className="bg-eve-surface border-b border-eve-border text-left">
-                <tr>
-                  <th className="px-3 py-2 text-xs font-semibold uppercase tracking-widest text-eve-muted">BPO Name</th>
-                  <th className="px-3 py-2 text-xs font-semibold uppercase tracking-widest text-eve-muted">ME/TE</th>
-                  <th className="px-3 py-2 text-xs font-semibold uppercase tracking-widest text-eve-muted">Owned BPCs</th>
-                  <th className="px-3 py-2 text-xs font-semibold uppercase tracking-widest text-eve-muted">Total BPC Runs</th>
+        {!loading && (
+          <div className="bg-eve-surface border border-eve-border rounded-lg overflow-hidden shadow-xl">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="bg-eve-bg/50 text-eve-muted text-[10px] uppercase tracking-wider font-bold border-b border-eve-border">
+                  <th className="px-4 py-3">Blueprint / Category</th>
+                  <th className="px-4 py-3 text-right">ME / TE</th>
+                  <th className="px-4 py-3 text-right">Owned BPCs</th>
+                  <th className="px-4 py-3 text-right">Total BPC Runs</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-eve-border/50">
                 {filtered.map(bp => (
-                  <tr key={`${bp.blueprint_type_id}-${bp.item_id}`} className="border-b border-eve-border/50 hover:bg-eve-surface/40 transition-colors">
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                         <img
-                          src={`https://images.evetech.net/types/${bp.product_type_id}/icon?size=32`}
-                          alt=""
-                          className="w-6 h-6 rounded border border-eve-border"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                        />
-                        <span className="text-eve-text font-medium">{bp.blueprint_name}</span>
-                      </div>
+                  <tr key={bp.blueprint_type_id} className="hover:bg-white/5 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-eve-text">{bp.blueprint_name}</div>
+                      <div className="text-[10px] text-eve-muted uppercase font-bold">{bp.category_name}</div>
                     </td>
-                    <td className="px-3 py-2 text-eve-muted">{bp.me} / {bp.te}</td>
-                    <td className={`px-3 py-2 font-bold ${bp.bpc_count === 0 ? "text-eve-orange" : "text-eve-text"}`}>
+                    <td className="px-4 py-3 text-right text-eve-muted">
+                      <span className="text-blue-400">{bp.me}</span> / <span className="text-purple-400">{bp.te}</span>
+                    </td>
+                    <td className={`px-4 py-3 text-right font-medium ${(bp.bpc_count || 0) > 0 ? "text-green-400" : "text-eve-muted"}`}>
                       {bp.bpc_count || 0}
-                      {bp.bpc_count === 0 && <span className="ml-2 px-1.5 py-0.5 bg-eve-orange/10 border border-eve-orange/30 rounded text-[10px] uppercase tracking-tighter">Needs Copy</span>}
                     </td>
-                    <td className="px-3 py-2 text-eve-text">{bp.bpc_total_runs || 0}</td>
+                    <td className="px-4 py-3 text-right text-eve-text">
+                      {(bp.bpc_total_runs || 0).toLocaleString()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -175,5 +138,18 @@ export default function CopyingPage({ character }: Props) {
         )}
       </main>
     </div>
+  );
+}
+
+function FilterBtn({ label, active, onClick, color }: { label: string; active: boolean; onClick: () => void; color: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-2 py-0.5 rounded border transition-all uppercase text-[9px] font-bold ${
+        active ? color : "bg-eve-bg border-eve-border text-eve-muted"
+      }`}
+    >
+      {label}
+    </button>
   );
 }

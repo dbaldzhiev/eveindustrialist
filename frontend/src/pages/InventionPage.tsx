@@ -23,6 +23,10 @@ export const DEFAULT_SETTINGS: Settings = {
   assumed_te:           20,
   industry_level:       0,
   adv_industry_level:   0,
+  reaction_facility_tax: 0,
+  reaction_me_bonus:     0,
+  reaction_te_bonus:     0,
+  reaction_cost_bonus:   0,
 };
 
 interface Props {

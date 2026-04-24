@@ -91,26 +91,36 @@ function bpParams(s: Settings) {
     min_profit:           s.min_profit,
     industry_level:       s.industry_level,
     adv_industry_level:   s.adv_industry_level,
+    reaction_facility_tax: s.reaction_facility_tax,
+    reaction_me_bonus:     s.reaction_me_bonus,
+    reaction_te_bonus:     s.reaction_te_bonus,
+    reaction_cost_bonus:   s.reaction_cost_bonus,
   };
 }
 
 export async function fetchBlueprints(
-  settings: Settings, 
-  forceRefresh: boolean = false, 
+  settings: Settings,
+  forceRefresh: boolean = false,
   mode: string = "build",
   decryptorStrategy: string = "none",
   decryptorTypeId: number | null = null,
+  individual: boolean = false,
 ): Promise<BlueprintResult[]> {
   const { data } = await api.get<BlueprintResult[]>("/api/blueprints", {
-    params: { 
-      ...bpParams(settings), 
-      force_refresh: forceRefresh, 
+    params: {
+      ...bpParams(settings),
+      force_refresh: forceRefresh,
       mode,
       decryptor_strategy: decryptorStrategy,
       decryptor_type_id: decryptorTypeId,
+      individual,
     },
   });
   return data;
+}
+
+export async function fetchReactions(settings: Settings, forceRefresh: boolean = false): Promise<BlueprintResult[]> {
+  return fetchBlueprints(settings, forceRefresh, "react");
 }
 
 export async function fetchExplore(settings: Settings, forceRefresh: boolean = false): Promise<BlueprintResult[]> {
@@ -119,6 +129,17 @@ export async function fetchExplore(settings: Settings, forceRefresh: boolean = f
       ...bpParams(settings),
       assumed_me: settings.assumed_me,
       assumed_te: settings.assumed_te,
+      force_refresh: forceRefresh,
+    },
+    timeout: 120_000,
+  });
+  return data;
+}
+
+export async function fetchReactionsExplore(settings: Settings, forceRefresh: boolean = false): Promise<BlueprintResult[]> {
+  const { data } = await api.get<BlueprintResult[]>("/api/blueprints/reactions/explore", {
+    params: {
+      ...bpParams(settings),
       force_refresh: forceRefresh,
     },
     timeout: 120_000,
@@ -151,6 +172,48 @@ export async function deleteStructure(id: number): Promise<void> {
 export async function fetchWarehouse(): Promise<WarehouseItem[]> {
   const { data } = await api.get<WarehouseItem[]>("/api/warehouse");
   return data;
+}
+
+export async function fetchSimulationData(settings: Settings): Promise<BlueprintResult[]> {
+  return fetchBlueprints({ ...settings, min_profit: -1e15 }, false, "build");
+}
+
+export async function fetchBlueprintDetail(
+  blueprintTypeId: number,
+  me: number,
+  te: number,
+  runs: number,
+  settings: Settings,
+): Promise<BlueprintResult> {
+  const { data } = await api.get<BlueprintResult>("/api/blueprints/detail", {
+    params: {
+      blueprint_type_id:    blueprintTypeId,
+      me, te, runs,
+      solar_system_id:      settings.solar_system_id,
+      price_region_id:      settings.price_region_id,
+      broker_fee:           settings.broker_fee,
+      sales_tax:            settings.sales_tax,
+      facility_tax:         settings.facility_tax,
+      structure_me_bonus:   settings.structure_me_bonus,
+      structure_te_bonus:   settings.structure_te_bonus,
+      structure_cost_bonus: settings.structure_cost_bonus,
+      material_order_type:  settings.material_order_type,
+      product_order_type:   settings.product_order_type,
+      industry_level:       settings.industry_level,
+      adv_industry_level:   settings.adv_industry_level,
+    },
+  });
+  return data;
+}
+
+export async function updatePlanItemApi(
+  planId: number,
+  itemId: number,
+  runs: number,
+  me: number,
+  te: number,
+): Promise<void> {
+  await api.patch(`/api/plans/${planId}/items/${itemId}`, { runs, me, te });
 }
 
 export async function syncWarehouse(): Promise<{ synced: number }> {

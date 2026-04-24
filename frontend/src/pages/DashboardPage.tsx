@@ -21,6 +21,10 @@ export const DEFAULT_SETTINGS: Settings = {
   assumed_te:           20,
   industry_level:       0,
   adv_industry_level:   0,
+  reaction_facility_tax: 0,
+  reaction_me_bonus:     0,
+  reaction_te_bonus:     0,
+  reaction_cost_bonus:   0,
 };
 
 interface Props {
@@ -68,6 +72,10 @@ export default function DashboardPage({ character }: Props) {
           min_profit:           appSettings.min_profit ?? 0,
           material_order_type:  appSettings.material_order_type ?? "sell",
           product_order_type:   appSettings.product_order_type ?? "sell",
+          reaction_facility_tax: appSettings.reaction_facility_tax ?? 0,
+          reaction_me_bonus:     appSettings.reaction_me_bonus ?? 0,
+          reaction_te_bonus:     appSettings.reaction_te_bonus ?? 0,
+          reaction_cost_bonus:   appSettings.reaction_cost_bonus ?? 0,
         };
         setSettings(newSettings);
 

@@ -7,404 +7,232 @@ interface Props {
 }
 
 const ISK_FORMAT = new Intl.NumberFormat("en-US", {
-  notation: "compact",
-  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 });
 
-function isk(v: number) {
-  return ISK_FORMAT.format(v) + " ISK";
+const PCT_FORMAT = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+export function fmtISK(val: number) {
+  return ISK_FORMAT.format(val) + " ISK";
 }
 
-function pct(v: number) {
-  return v.toFixed(1) + "%";
-}
-
-function profitColor(v: number) {
-  if (v > 0) return "text-eve-profit";
-  if (v < 0) return "text-eve-loss";
-  return "text-eve-muted";
-}
-
-const SORT_COLUMNS: { key: SortKey; label: string }[] = [
-  { key: "blueprint_name", label: "Blueprint" },
-  { key: "profit",         label: "Profit" },
-  { key: "margin_pct",     label: "Margin" },
-  { key: "isk_per_hour",   label: "ISK/h" },
-  { key: "material_cost",  label: "Mat. Cost" },
-  { key: "total_cost",     label: "Total Cost" },
-  { key: "revenue",        label: "Revenue" },
-];
-
-interface GroupedBlueprint {
-  id: string; // Unique ID for this row (group or BPO)
-  blueprint_type_id: number;
-  blueprint_name: string;
-  product_type_id: number;
-  summary: BlueprintResult;
-  items: BlueprintResult[];
-  isBpo: boolean;
-  isGroup: boolean;
-}
-
-export default function BlueprintTable({ blueprints = [], showGroups = true }: Props) {
+export default function BlueprintTable({ blueprints }: Props) {
   const [sortKey, setSortKey]     = useState<SortKey>("profit");
-  const [sortAsc, setSortAsc]     = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [expandedRows, setExpandedRows] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const toggleGroup = (id: string) => {
-    const next = new Set(expandedGroups);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setExpandedGroups(next);
-  };
+  // Category Filtering
+  const categories = useMemo(() => {
+    const cats = new Set<string>();
+    blueprints.forEach(b => { if (b.category_name) cats.add(b.category_name); });
+    return Array.from(cats).sort();
+  }, [blueprints]);
 
-  const displayData = useMemo(() => {
-    if (!blueprints || !Array.isArray(blueprints)) return [];
-    
-    if (!showGroups) {
-      return blueprints
-        .map((bp, idx) => ({
-          id: `raw-${bp.blueprint_type_id}-${bp.me}-${bp.te}-${idx}`,
-          blueprint_type_id: bp.blueprint_type_id,
-          blueprint_name: bp.blueprint_name,
-          product_type_id: bp.product_type_id,
-          summary: bp,
-          items: [bp],
-          isBpo: bp.is_bpo,
-          isGroup: false,
-        }))
-        .sort((a, b) => {
-          const av = a.summary[sortKey] as number | string;
-          const bv = b.summary[sortKey] as number | string;
-          const cmp = typeof av === "string"
-            ? (av as string).localeCompare(bv as string)
-            : (av as number) - (bv as number);
-          return sortAsc ? cmp : -cmp;
-        });
-    }
+  // All categories are enabled (selected) by default
+  const [deselectedCategories, setDeselectedCategories] = useState<string[]>([]);
 
-    const groupsMap = new Map<number, BlueprintResult[]>();
-    const bpos: BlueprintResult[] = [];
-
-    for (const bp of blueprints) {
-      if (bp.is_bpo) {
-        bpos.push(bp);
-      } else {
-        if (!groupsMap.has(bp.blueprint_type_id)) groupsMap.set(bp.blueprint_type_id, []);
-        groupsMap.get(bp.blueprint_type_id)!.push(bp);
-      }
-    }
-
-    const result: GroupedBlueprint[] = [];
-
-    // Add BPOs as individual entries
-    bpos.forEach((bp, idx) => {
-      result.push({
-        id: `bpo-${bp.blueprint_type_id}-${idx}`,
-        blueprint_type_id: bp.blueprint_type_id,
-        blueprint_name: bp.blueprint_name,
-        product_type_id: bp.product_type_id,
-        summary: bp,
-        items: [bp],
-        isBpo: true,
-        isGroup: false,
-      });
-    });
-
-    // Add BPC groups
-    groupsMap.forEach((items, typeId) => {
-      if (items.length === 1) {
-        result.push({
-          id: `bpc-single-${typeId}`,
-          blueprint_type_id: typeId,
-          blueprint_name: items[0].blueprint_name,
-          product_type_id: items[0].product_type_id,
-          summary: items[0],
-          items: items,
-          isBpo: false,
-          isGroup: false,
-        });
-      } else {
-        // Calculate totals for the group header
-        const totalProfit = items.reduce((s, i) => s + i.profit, 0);
-        const totalRevenue = items.reduce((s, i) => s + i.revenue, 0);
-        const totalMatCost = items.reduce((s, i) => s + i.material_cost, 0);
-        const totalJobCost = items.reduce((s, i) => s + i.job_cost, 0);
-        const totalCost = items.reduce((s, i) => s + i.total_cost, 0);
-        const totalIskHr = items.reduce((s, i) => s + i.isk_per_hour, 0);
-        const avgMargin = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
-
-        const summary: BlueprintResult = {
-          ...items[0],
-          profit: totalProfit,
-          revenue: totalRevenue,
-          material_cost: totalMatCost,
-          job_cost: totalJobCost,
-          total_cost: totalCost,
-          isk_per_hour: totalIskHr,
-          margin_pct: avgMargin,
-        };
-
-        result.push({
-          id: `bpc-group-${typeId}`,
-          blueprint_type_id: typeId,
-          blueprint_name: items[0].blueprint_name,
-          product_type_id: items[0].product_type_id,
-          summary,
-          items: [...items].sort((a, b) => b.profit - a.profit),
-          isBpo: false,
-          isGroup: true,
-        });
-      }
-    });
-
-    return result.sort((a, b) => {
-      const av = a.summary[sortKey] as number | string;
-      const bv = b.summary[sortKey] as number | string;
-      const cmp = typeof av === "string"
-        ? (av as string).localeCompare(bv as string)
-        : (av as number) - (bv as number);
-      return sortAsc ? cmp : -cmp;
-    });
-  }, [blueprints, sortKey, sortAsc, showGroups]);
-
-  const handleSort = (key: SortKey) => {
-    if (key === sortKey) setSortAsc((p) => !p);
-    else { setSortKey(key); setSortAsc(false); }
-  };
-
-  if (!blueprints || blueprints.length === 0) {
-    return (
-      <div className="text-center py-16 text-eve-muted text-sm">
-        No blueprints found. Make sure you have blueprints in your assets
-        and have selected a solar system in Settings.
-      </div>
+  const handleToggleCategory = (cat: string) => {
+    setDeselectedCategories(prev => 
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
     );
-  }
+  };
+
+  const sortedBlueprints = useMemo(() => {
+    let filtered = blueprints;
+    if (deselectedCategories.length > 0) {
+      filtered = filtered.filter(b => !b.category_name || !deselectedCategories.includes(b.category_name));
+    }
+
+    return [...filtered].sort((a, b) => {
+      let valA = a[sortKey] ?? 0;
+      let valB = b[sortKey] ?? 0;
+
+      if (sortKey === "blueprint_name") {
+        valA = a.blueprint_name.toLowerCase();
+        valB = b.blueprint_name.toLowerCase();
+      }
+
+      if (valA < valB) return sortOrder === "asc" ? -1 : 1;
+      if (valA > valB) return sortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [blueprints, sortKey, sortOrder, deselectedCategories]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortOrder("desc");
+    }
+  };
+
+  const toggleExpand = (bp: BlueprintResult) => {
+    const id = `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.decryptor_name || ""}`;
+    setExpandedId(expandedId === id ? null : id);
+  };
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-eve-border">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-eve-border bg-eve-surface text-left">
-            {SORT_COLUMNS.map(({ key, label }) => (
-              <th
-                key={key}
-                onClick={() => handleSort(key)}
-                className="px-3 py-2.5 text-xs font-semibold uppercase
-                           tracking-widest text-eve-muted cursor-pointer
-                           select-none hover:text-eve-text transition-colors"
-              >
-                {label}
-                {sortKey === key && (
-                  <span className="ml-1 text-eve-orange">
-                    {sortAsc ? "↑" : "↓"}
-                  </span>
-                )}
-              </th>
-            ))}
-            <th className="px-3 py-2.5 text-xs font-semibold uppercase
-                           tracking-widest text-eve-muted">
-              ME / TE
-            </th>
-            <th className="px-3 py-2.5 text-xs font-semibold uppercase
-                           tracking-widest text-eve-muted">
-              Type
-            </th>
-            {blueprints.some(b => b.decryptor_name) && (
-              <th className="px-3 py-2.5 text-xs font-semibold uppercase
-                             tracking-widest text-eve-muted">
-                Decryptor
-              </th>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {displayData.map((group) => {
-            const isGroupExpanded = expandedGroups.has(group.id);
-            const isRowExpanded = expandedRows === group.id;
-            const hasDecryptors = blueprints.some(b => b.decryptor_name);
+    <div className="space-y-4">
+      {/* Category Filter Chips */}
+      {categories.length > 0 && (
+        <div className="flex flex-wrap gap-2 py-2">
+          {categories.map(cat => (
+            <button
+              key={cat}
+              onClick={() => handleToggleCategory(cat)}
+              className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase transition-all border ${
+                !deselectedCategories.includes(cat)
+                  ? "bg-eve-orange text-white border-eve-orange"
+                  : "bg-eve-surface text-eve-muted border-eve-border hover:border-eve-muted"
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+          {deselectedCategories.length > 0 && (
+            <button 
+              onClick={() => setDeselectedCategories([])}
+              className="px-3 py-1 text-[10px] font-bold uppercase text-red-400 hover:text-red-300 transition-colors"
+            >
+              Reset Filters
+            </button>
+          )}
+        </div>
+      )}
 
-            return (
-              <React.Fragment key={group.id}>
-                {/* Header Row */}
-                <tr
-                  onClick={() => {
-                    if (group.isGroup) toggleGroup(group.id);
-                    else setExpandedRows(isRowExpanded ? null : group.id);
-                  }}
-                  className={`border-b border-eve-border/50 hover:bg-eve-surface/60
-                             cursor-pointer transition-colors ${group.isGroup ? "bg-eve-surface/20" : ""}`}
-                >
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 flex items-center justify-center">
-                        {group.isGroup && (
-                          <span className="text-[10px] text-eve-orange">
-                            {isGroupExpanded ? "▼" : "▶"}
-                          </span>
-                        )}
-                      </div>
-                      <img
-                        src={`https://images.evetech.net/types/${group.product_type_id}/icon?size=32`}
-                        alt=""
-                        className="w-6 h-6 rounded border border-eve-border"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                      />
+      <div className="bg-eve-surface border border-eve-border rounded-lg overflow-hidden shadow-xl">
+        <table className="w-full text-left text-sm border-collapse">
+          <thead>
+            <tr className="bg-eve-bg/50 text-eve-muted text-[10px] uppercase tracking-wider font-bold border-b border-eve-border">
+              <th className="px-4 py-3 cursor-pointer hover:text-eve-text" onClick={() => toggleSort("blueprint_name")}>
+                Blueprint / Category {sortKey === "blueprint_name" && (sortOrder === "asc" ? "↑" : "↓")}
+              </th>
+              <th className="px-4 py-3 text-right">Runs</th>
+              <th className="px-4 py-3 text-right cursor-pointer hover:text-eve-text" onClick={() => toggleSort("profit")}>
+                Total Profit {sortKey === "profit" && (sortOrder === "asc" ? "↑" : "↓")}
+              </th>
+              <th className="px-4 py-3 text-right cursor-pointer hover:text-eve-text" onClick={() => toggleSort("margin_pct")}>
+                Margin {sortKey === "margin_pct" && (sortOrder === "asc" ? "↑" : "↓")}
+              </th>
+              <th className="px-4 py-3 text-right cursor-pointer hover:text-eve-text" onClick={() => toggleSort("isk_per_hour")}>
+                ISK/Hr {sortKey === "isk_per_hour" && (sortOrder === "asc" ? "↑" : "↓")}
+              </th>
+              <th className="px-2 py-3"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-eve-border/50">
+            {sortedBlueprints.map((bp) => {
+              const rowId = `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.decryptor_name || ""}`;
+              const isExpanded = expandedId === rowId;
+              const cleanBpName = bp.blueprint_name.replace(" (Potential)", "");
+
+              return (
+                <React.Fragment key={rowId}>
+                  <tr
+                    className={`group hover:bg-white/5 transition-colors cursor-pointer ${isExpanded ? "bg-white/5" : ""}`}
+                    onClick={() => toggleExpand(bp)}
+                  >
+                    <td className="px-4 py-3">
                       <div className="flex flex-col">
-                        <span className="text-eve-text font-medium">{group.blueprint_name}</span>
-                        {group.isGroup && (
-                          <span className="text-[10px] text-eve-muted">
-                            Total for {group.items.length} copies
-                          </span>
-                        )}
+                        <span className="font-semibold text-eve-text group-hover:text-eve-orange transition-colors">
+                          {cleanBpName}
+                        </span>
+                        <div className="flex gap-2 text-[10px] mt-0.5">
+                          <span className="text-eve-muted font-bold uppercase">{bp.category_name}</span>
+                          <span className="text-blue-400">ME {bp.me}</span>
+                          <span className="text-purple-400">TE {bp.te}</span>
+                          {bp.decryptor_name && <span className="text-eve-orange">D: {bp.decryptor_name}</span>}
+                          {bp.is_bpo ? <span className="text-green-500 font-bold uppercase">BPO</span> : <span className="text-yellow-500 font-bold uppercase">BPC</span>}
+                        </div>
                       </div>
-                    </div>
-                  </td>
-
-                  <td className={`px-3 py-2.5 font-semibold ${profitColor(group.summary.profit)}`}>
-                    {isk(group.summary.profit)}
-                  </td>
-                  <td className={`px-3 py-2.5 ${profitColor(group.summary.profit)}`}>
-                    {pct(group.summary.margin_pct)}
-                  </td>
-                  <td className="px-3 py-2.5 text-eve-text">{isk(group.summary.isk_per_hour)}</td>
-                  <td className="px-3 py-2.5 text-eve-muted">{isk(group.summary.material_cost)}</td>
-                  <td className="px-3 py-2.5 text-eve-muted">{isk(group.summary.total_cost)}</td>
-                  <td className="px-3 py-2.5 text-eve-text">{isk(group.summary.revenue)}</td>
-                  
-                  <td className="px-3 py-2.5 text-eve-muted">
-                    {!group.isGroup ? `${group.summary.me} / ${group.summary.te}` : "—"}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    {!group.isGroup ? (
-                      <TypeBadge isBpo={group.isBpo} isInvention={group.summary.is_invention} />
-                    ) : (
-                      <span className="text-[10px] text-eve-muted uppercase">Multiple</span>
-                    )}
-                  </td>
-                  {hasDecryptors && (
-                    <td className="px-3 py-2.5 text-[10px] text-eve-blue font-bold uppercase">
-                      {group.summary.decryptor_name || "—"}
                     </td>
+                    <td className="px-4 py-3 text-right text-eve-muted font-medium">
+                      {bp.runs}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-bold ${bp.profit > 0 ? "text-green-400" : "text-red-400"}`}>
+                      {fmtISK(bp.profit)}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-medium ${bp.margin_pct > 0 ? "text-green-500/80" : "text-red-500/80"}`}>
+                      {PCT_FORMAT.format(bp.margin_pct)}%
+                    </td>
+                    <td className="px-4 py-3 text-right text-eve-text font-medium">
+                      {fmtISK(bp.isk_per_hour)}
+                    </td>
+                    <td className="px-2 py-3 text-right">
+                      <span className="text-eve-muted text-xs">{isExpanded ? "−" : "+"}</span>
+                    </td>
+                  </tr>
+
+                  {isExpanded && (
+                    <tr className="bg-eve-bg/30">
+                      <td colSpan={6} className="px-4 py-6 border-b border-eve-border">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                          {/* Unit breakdown */}
+                          <div className="space-y-4">
+                            <h4 className="text-[10px] font-bold uppercase tracking-widest text-eve-muted border-b border-eve-border/30 pb-1">
+                              Profit Breakdown
+                            </h4>
+                            <div className="grid grid-cols-3 gap-3">
+                              <ExpandCard label="Single Item" value={fmtISK(bp.profit / Math.max(1, bp.product_quantity))} />
+                              <ExpandCard label="Single Run" value={fmtISK(bp.profit / Math.max(1, bp.runs))} />
+                              <ExpandCard label="Full Job" value={fmtISK(bp.profit)} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mt-4">
+                                <ExpandCard label="Unit Revenue" value={fmtISK(bp.sell_price)} />
+                                <ExpandCard label="Unit Cost" value={fmtISK(bp.total_cost / Math.max(1, bp.product_quantity))} />
+                            </div>
+                          </div>
+
+                          {/* Material list */}
+                          <div className="space-y-4">
+                            <h4 className="text-[10px] font-bold uppercase tracking-widest text-eve-muted border-b border-eve-border/30 pb-1">
+                              Required Materials (for {bp.runs} runs)
+                            </h4>
+                            <div className="space-y-1.5">
+                              {bp.materials.map((mat) => (
+                                <div key={mat.type_id} className="flex justify-between text-xs group/mat">
+                                  <span className="text-eve-text group-hover/mat:text-eve-orange transition-colors">
+                                    {mat.name}
+                                  </span>
+                                  <div className="flex gap-4">
+                                    <span className="text-eve-muted">
+                                      {mat.quantity.toLocaleString()} × {fmtISK(mat.unit_price)}
+                                    </span>
+                                    <span className="text-eve-text font-medium min-w-[100px] text-right">
+                                      {fmtISK(mat.total_cost)}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                              <div className="pt-2 mt-2 border-t border-eve-border/30 flex justify-between font-bold">
+                                <span className="text-eve-muted uppercase text-[10px]">Total Material Cost</span>
+                                <span className="text-eve-orange">{fmtISK(bp.material_cost)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
                   )}
-                </tr>
-
-                {/* Individual rows within group */}
-                {group.isGroup && isGroupExpanded && group.items.map((bp, idx) => {
-                  const subId = `${group.id}-${idx}`;
-                  const isSubExpanded = expandedRows === subId;
-                  return (
-                    <React.Fragment key={subId}>
-                      <tr
-                        onClick={() => setExpandedRows(isSubExpanded ? null : subId)}
-                        className="border-b border-eve-border/30 bg-eve-bg hover:bg-eve-surface/40
-                                   cursor-pointer transition-colors"
-                      >
-                        <td className="px-3 py-2 pl-12 text-eve-muted">
-                          Copy #{idx + 1}
-                        </td>
-                        <td className={`px-3 py-2 font-medium ${profitColor(bp.profit)}`}>
-                          {isk(bp.profit)}
-                        </td>
-                        <td className={`px-3 py-2 ${profitColor(bp.profit)}`}>
-                          {pct(bp.margin_pct)}
-                        </td>
-                        <td className="px-3 py-2 text-eve-muted">{isk(bp.isk_per_hour)}</td>
-                        <td className="px-3 py-2 text-eve-muted/50">{isk(bp.material_cost)}</td>
-                        <td className="px-3 py-2 text-eve-muted/50">{isk(bp.total_cost)}</td>
-                        <td className="px-3 py-2 text-eve-muted">{isk(bp.revenue)}</td>
-                        <td className="px-3 py-2 text-eve-muted">{bp.me} / {bp.te}</td>
-                        <td className="px-3 py-2">
-                          <TypeBadge isBpo={bp.is_bpo} isInvention={bp.is_invention} />
-                        </td>
-                        {hasDecryptors && (
-                          <td className="px-3 py-2 text-[10px] text-eve-blue/70 uppercase">
-                            {bp.decryptor_name || "—"}
-                          </td>
-                        )}
-                      </tr>
-                      {isSubExpanded && <DetailRow bp={bp} hasDecryptors={hasDecryptors} />}
-                    </React.Fragment>
-                  );
-                })}
-
-                {/* Single item expansion */}
-                {!group.isGroup && isRowExpanded && (
-                  <DetailRow bp={group.summary} hasDecryptors={hasDecryptors} />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-function TypeBadge({ isBpo, isInvention }: { isBpo: boolean; isInvention?: boolean }) {
-  if (isInvention) {
-    return (
-      <span className="text-[10px] px-1.5 py-0.5 rounded border border-eve-blue/50 bg-eve-blue/10 text-eve-blue">
-        POT
-      </span>
-    );
-  }
+function ExpandCard({ label, value }: { label: string; value: string }) {
   return (
-    <span
-      className={`text-[10px] px-1.5 py-0.5 rounded border
-        ${isBpo
-          ? "border-eve-blue/50 text-eve-blue"
-          : "border-eve-orange/50 text-eve-orange"}`}
-    >
-      {isBpo ? "BPO" : "BPC"}
-    </span>
-  );
-}
-
-function DetailRow({ bp, hasDecryptors }: { bp: BlueprintResult, hasDecryptors?: boolean }) {
-  return (
-    <tr className="border-b border-eve-border bg-eve-bg">
-      <td colSpan={hasDecryptors ? 10 : 9} className="px-4 py-4">
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-4 text-xs">
-          <Stat label="Sell price"     value={isk(bp.sell_price)} />
-          <Stat label="Products"       value={`${bp.product_quantity}× ${bp.product_name}`} />
-          <Stat label="Job cost"       value={isk(bp.job_cost)} />
-          <Stat label="Net revenue"    value={isk(bp.revenue)} />
-          {hasDecryptors && <Stat label="Decryptor" value={bp.decryptor_name || "None"} />}
-        </div>
-
-        <h3 className="text-xs font-semibold uppercase tracking-widest
-                       text-eve-muted mb-2">
-          Materials ({bp.materials.length})
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1">
-          {bp.materials.map((m) => (
-            <div
-              key={m.type_id}
-              className="flex items-center justify-between
-                         bg-eve-surface rounded px-2 py-1.5 text-xs"
-            >
-              <span className="text-eve-text truncate max-w-[120px]"
-                    title={m.name}>
-                {m.name}
-              </span>
-              <span className="text-eve-muted ml-2 shrink-0">
-                {m.quantity.toLocaleString()}
-              </span>
-            </div>
-          ))}
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-eve-surface rounded px-3 py-2">
-      <div className="text-eve-muted mb-0.5">{label}</div>
+    <div className="bg-eve-surface rounded px-3 py-2 border border-eve-border/50 shadow-inner">
+      <div className="text-[10px] uppercase font-bold text-eve-muted mb-0.5">{label}</div>
       <div className="text-eve-text font-medium">{value}</div>
     </div>
   );

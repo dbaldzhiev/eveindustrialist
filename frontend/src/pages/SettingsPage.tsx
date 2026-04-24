@@ -70,6 +70,10 @@ const DEFAULTS: AppSettings = {
   warehouse_character_id:  null,
   warehouse_location_id:   null,
   warehouse_location_name: null,
+  reaction_facility_tax:   0.0,
+  reaction_me_bonus:       0.0,
+  reaction_te_bonus:       0.0,
+  reaction_cost_bonus:     0.0,
 };
 
 export default function SettingsPage({ character }: Props) {
@@ -146,8 +150,53 @@ export default function SettingsPage({ character }: Props) {
                 <PctField label="Facility Tax %" value={settings.facility_tax}
                   onChange={(v) => set("facility_tax", v)} max={25} step="0.1" />
               </div>
-              <div className="text-xs text-eve-muted/60">
-                Raitaru: 1% ME, 15% TE, 3% Cost · Azbel: 2% ME, 20% TE, 4% Cost · Sotiyo: 2.4% ME, 20% TE, 5% Cost
+              <div className="flex flex-wrap gap-x-3 gap-y-1 items-center text-[10px] text-eve-muted/60 border-t border-eve-border/30 pt-3">
+                <span className="uppercase font-bold tracking-tighter">Presets:</span>
+                {[
+                  { name: "Raitaru", me: 1.0, te: 15.0, cost: 3.0 },
+                  { name: "Azbel",   me: 2.0, te: 20.0, cost: 4.0 },
+                  { name: "Sotiyo",  me: 2.4, te: 20.0, cost: 5.0 },
+                ].map(p => (
+                  <button key={p.name} onClick={() => {
+                    set("structure_me_bonus", p.me / 100);
+                    set("structure_te_bonus", p.te / 100);
+                    set("structure_cost_bonus", p.cost / 100);
+                  }} className="hover:text-eve-orange transition-colors">
+                    {p.name} ({p.me}/{p.te}/{p.cost}%)
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {/* Reaction Facility */}
+            <section className="bg-eve-surface border border-eve-border rounded-lg p-4 space-y-4">
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-eve-muted">
+                Reaction Facility
+              </h2>
+              <div className="grid grid-cols-2 gap-4">
+                <PctField label="Reaction ME Bonus %" value={settings.reaction_me_bonus}
+                  onChange={(v) => set("reaction_me_bonus", v)} max={5} step="0.1" />
+                <PctField label="Reaction TE Bonus %" value={settings.reaction_te_bonus}
+                  onChange={(v) => set("reaction_te_bonus", v)} max={30} step="0.1" />
+                <PctField label="Reaction Cost Bonus %" value={settings.reaction_cost_bonus}
+                  onChange={(v) => set("reaction_cost_bonus", v)} max={25} step="0.1" />
+                <PctField label="Reaction Facility Tax %" value={settings.reaction_facility_tax}
+                  onChange={(v) => set("reaction_facility_tax", v)} max={25} step="0.1" />
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 items-center text-[10px] text-eve-muted/60 border-t border-eve-border/30 pt-3">
+                <span className="uppercase font-bold tracking-tighter">Presets (With Rigs):</span>
+                {[
+                  { name: "Athanor", bonus: 2.0 },
+                  { name: "Tatara",  bonus: 2.4 },
+                ].map(p => (
+                  <button key={p.name} onClick={() => {
+                    set("reaction_me_bonus", p.bonus / 100);
+                    set("reaction_te_bonus", p.bonus / 100);
+                    set("reaction_cost_bonus", p.bonus / 100);
+                  }} className="hover:text-purple-400 transition-colors">
+                    {p.name} ({p.bonus}%)
+                  </button>
+                ))}
               </div>
             </section>
 

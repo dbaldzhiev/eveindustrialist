@@ -42,6 +42,7 @@ export interface BlueprintResult {
   te:                number;
   runs:              number;
   is_bpo:            boolean;
+  item_id?:          number;
   is_invention?:     boolean;
   decryptor_name?:   string;
   bpc_count?:        number;
@@ -57,6 +58,7 @@ export interface BlueprintResult {
   sell_price: number;
   product_quantity: number;
   materials: MaterialLine[];
+  category_name?: string;
 }
 
 export type SortKey =
@@ -85,6 +87,10 @@ export interface Settings {
   assumed_te:           number;
   industry_level:       number;
   adv_industry_level:   number;
+  reaction_facility_tax: number;
+  reaction_me_bonus:     number;
+  reaction_te_bonus:     number;
+  reaction_cost_bonus:   number;
 }
 
 export interface Structure {
@@ -102,6 +108,8 @@ export interface WarehouseItem {
   type_name: string;
   quantity:  number;
   location?: string;
+  category_name?: string;
+  estimated_price?: number;
 }
 
 export interface ShoppingMaterial {
@@ -210,6 +218,10 @@ export interface AppSettings {
   warehouse_character_id:  number | null;
   warehouse_location_id:   number | null;
   warehouse_location_name: string | null;
+  reaction_facility_tax:   number;
+  reaction_me_bonus:       number;
+  reaction_te_bonus:       number;
+  reaction_cost_bonus:     number;
 }
 
 // Warehouse location picker

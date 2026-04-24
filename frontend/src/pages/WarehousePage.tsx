@@ -1,338 +1,308 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
-import {
-  fetchWarehouse, syncWarehouse, fetchAssetLocations,
-  fetchAppSettings, saveAppSettings,
+import { 
+    fetchWarehouse, fetchAppSettings, syncWarehouse, 
+    fetchAssetLocations, saveAppSettings 
 } from "../api/client";
-import type { Character, WarehouseItem, AssetLocation, AppSettings } from "../types";
+import { Spinner, fmtISK } from "./DashboardPage";
+import type { WarehouseItem, Character, AppSettings, AssetLocation } from "../types";
 
 interface Props {
   character: Character;
 }
 
-// Group locations by character
-function groupByChar(locs: AssetLocation[]): Map<number, { name: string; locs: AssetLocation[] }> {
-  const map = new Map<number, { name: string; locs: AssetLocation[] }>();
-  for (const loc of locs) {
-    if (!map.has(loc.character_id)) {
-      map.set(loc.character_id, { name: loc.character_name, locs: [] });
-    }
-    map.get(loc.character_id)!.locs.push(loc);
-  }
-  return map;
-}
-
-function SourcePicker({
-  onPick,
-  onCancel,
-  current,
-}: {
-  onPick: (loc: AssetLocation) => void;
-  onCancel: () => void;
-  current: { char_id: number | null; loc_id: number | null };
-}) {
-  const [locations, setLocations] = useState<AssetLocation[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchAssetLocations()
-      .then(setLocations)
-      .catch((e) => setError(e?.response?.data?.detail ?? "Failed to load locations"))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const grouped = groupByChar(locations);
-
-  return (
-    <div className="bg-eve-surface border border-eve-border rounded-lg p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-eve-text">Select Warehouse Location</h2>
-        <button onClick={onCancel} className="text-xs text-eve-muted hover:text-eve-orange transition-colors">
-          Cancel
-        </button>
-      </div>
-
-      {error && (
-        <div className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded px-3 py-2">
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="text-center py-6 text-eve-muted text-sm">
-          Fetching assets from ESI…
-        </div>
-      ) : locations.length === 0 ? (
-        <div className="text-center py-6 text-eve-muted text-sm">
-          No assets found. Sync first in the Warehouse tab.
-        </div>
-      ) : (
-        <div className="space-y-4 max-h-96 overflow-y-auto">
-          {[...grouped.entries()].map(([charId, { name, locs }]) => (
-            <div key={charId}>
-              <div className="flex items-center gap-2 mb-2">
-                <img
-                  src={`https://images.evetech.net/characters/${charId}/portrait?size=32`}
-                  alt={name}
-                  className="w-5 h-5 rounded-full border border-eve-border"
-                />
-                <span className="text-xs font-semibold text-eve-muted uppercase tracking-widest">
-                  {name}
-                </span>
-              </div>
-              <div className="space-y-1 pl-2">
-                {locs.map((loc) => {
-                  const isActive = current.char_id === charId && current.loc_id === loc.loc_id;
-                  return (
-                    <button
-                      key={`${charId}-${loc.loc_id}`}
-                      onClick={() => onPick(loc)}
-                      className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded
-                                  border transition-colors
-                                  ${isActive
-                                    ? "border-eve-orange bg-eve-orange/10 text-eve-text"
-                                    : "border-eve-border/50 hover:border-eve-orange/40 hover:bg-eve-bg text-eve-muted"
-                                  }`}
-                    >
-                      <span className="text-xs">
-                        {loc.is_container ? "📦" : "🏭"}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-eve-text truncate">{loc.location_name}</div>
-                        {loc.is_container ? (
-                          <div className="text-xs text-eve-muted/60">Container</div>
-                        ) : null}
-                      </div>
-                      <div className="text-right shrink-0 text-xs text-eve-muted">
-                        <div>{loc.type_count} types</div>
-                        <div>{(loc.total_quantity ?? 0).toLocaleString()} units</div>
-                      </div>
-                      {isActive && (
-                        <span className="text-xs text-eve-orange font-semibold">✓ Active</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function WarehousePage({ character }: Props) {
-  const [items, setItems]         = useState<WarehouseItem[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [syncing, setSyncing]     = useState(false);
-  const [syncMsg, setSyncMsg]     = useState<string | null>(null);
-  const [error, setError]         = useState<string | null>(null);
-  const [filter, setFilter]       = useState("");
-  const [showPicker, setShowPicker] = useState(false);
+  const [items, setItems]             = useState<WarehouseItem[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [syncing, setSyncing]         = useState(false);
+  const [error, setError]             = useState<string | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  
+  // Location Picker State
+  const [showPicker, setShowPicker]   = useState(false);
+  const [locations, setLocations]     = useState<AssetLocation[]>([]);
+  const [loadingLocs, setLoadingLocs] = useState(false);
+  const [locSearch, setLocSearch]     = useState("");
 
-  const loadWarehouse = () => {
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+
+  const loadData = async () => {
     setLoading(true);
-    setError(null);
-    fetchWarehouse()
-      .then(setItems)
-      .catch((e) => setError(e?.response?.data?.detail ?? "Failed to load warehouse"))
-      .finally(() => setLoading(false));
+    try {
+      const [inv, settings] = await Promise.all([fetchWarehouse(), fetchAppSettings()]);
+      setItems(inv);
+      setAppSettings(settings);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    fetchAppSettings()
-      .then((s) => setAppSettings(s))
-      .catch(() => {});
-    loadWarehouse();
+    loadData();
   }, []);
 
   const handleSync = async () => {
     setSyncing(true);
-    setSyncMsg(null);
-    setError(null);
     try {
-      const result = await syncWarehouse();
-      setSyncMsg(`Synced ${result.synced} item types.`);
-      loadWarehouse();
-    } catch (e: unknown) {
-      setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "Sync failed");
+      await syncWarehouse();
+      // After sync, re-fetch warehouse items to respect the current source (container or aggregated)
+      const inv = await fetchWarehouse();
+      setItems(inv);
+    } catch (e: any) {
+      setError(e.message);
     } finally {
       setSyncing(false);
     }
   };
 
-  const handlePickSource = async (loc: AssetLocation) => {
-    const label = `${loc.character_name} › ${loc.location_name}`;
-    const updated = await saveAppSettings({
-      ...(appSettings ?? {}),
-      warehouse_character_id:  loc.character_id,
-      warehouse_location_id:   loc.loc_id,
-      warehouse_location_name: label,
-    }).catch(() => null);
-    if (updated) {
-      setAppSettings(updated);
+  const handleOpenPicker = async () => {
+    setShowPicker(true);
+    setLoadingLocs(true);
+    try {
+        const locs = await fetchAssetLocations();
+        setLocations(locs);
+    } catch (e: any) {
+        setError("Failed to load locations: " + e.message);
+    } finally {
+        setLoadingLocs(false);
     }
-    setShowPicker(false);
-    loadWarehouse();
   };
 
-  const handleClearSource = async () => {
-    const updated = await saveAppSettings({
-      ...(appSettings ?? {}),
-      warehouse_character_id:  null,
-      warehouse_location_id:   null,
-      warehouse_location_name: null,
-    }).catch(() => null);
-    if (updated) setAppSettings(updated);
-    loadWarehouse();
+  const handleSelectLocation = async (loc: AssetLocation | null) => {
+    try {
+        setLoading(true);
+        const newSettings = await saveAppSettings({
+            warehouse_character_id:  loc?.character_id  ?? null,
+            warehouse_location_id:   loc?.loc_id        ?? null,
+            warehouse_location_name: loc ? `${loc.character_name} - ${loc.location_name}` : null
+        });
+        setAppSettings(newSettings);
+        setShowPicker(false);
+        const inv = await fetchWarehouse();
+        setItems(inv);
+    } catch (e: any) {
+        setError("Failed to save source: " + e.message);
+    } finally {
+        setLoading(false);
+    }
   };
 
-  const filtered = filter.trim()
-    ? items.filter((i) => i.type_name.toLowerCase().includes(filter.toLowerCase()))
-    : items;
+  const categories = useMemo(() => {
+    const cats = new Set<string>();
+    items.forEach(i => { if (i.category_name) cats.add(i.category_name); });
+    return Array.from(cats).sort();
+  }, [items]);
 
-  const totalTypes = items.length;
-  const totalUnits = items.reduce((s, i) => s + i.quantity, 0);
+  const filtered = useMemo(() => {
+    if (selectedCategories.length === 0) return items;
+    return items.filter(i => i.category_name && selectedCategories.includes(i.category_name));
+  }, [items, selectedCategories]);
 
-  const sourceName = appSettings?.warehouse_location_name;
+  const filteredLocs = useMemo(() => {
+    return locations.filter(l => 
+        l.location_name.toLowerCase().includes(locSearch.toLowerCase()) ||
+        l.character_name.toLowerCase().includes(locSearch.toLowerCase())
+    );
+  }, [locations, locSearch]);
+
+  const handleToggleCategory = (cat: string) => {
+    setSelectedCategories(prev => 
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+    );
+  };
+
+  const totalValue = filtered.reduce((acc, i) => acc + ((i.estimated_price || 0) * i.quantity), 0);
 
   return (
-    <div className="min-h-screen bg-eve-bg font-eve">
+    <div className="min-h-screen bg-eve-bg font-eve text-eve-text">
       <Navbar character={character} />
-
       <main className="max-w-screen-2xl mx-auto px-4 py-6 space-y-5">
-        {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-lg font-semibold text-eve-text">Warehouse</h1>
-            {!loading && (
-              <div className="text-xs text-eve-muted mt-0.5">
-                {totalTypes} item types · {totalUnits.toLocaleString()} units
-              </div>
-            )}
+        
+        {/* Header & Source Selection */}
+        <div className="bg-eve-surface border border-eve-border rounded-lg p-4 flex flex-col md:flex-row justify-between gap-6 shadow-xl">
+          <div className="space-y-3">
+            <div>
+                <h1 className="text-xl font-bold text-white flex items-center gap-2">
+                    <span className="text-eve-orange">📦</span> Warehouse
+                </h1>
+                <p className="text-xs text-eve-muted">
+                    Inventory tracking for manufacturing simulation.
+                </p>
+            </div>
+            
+            <div className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-eve-muted tracking-widest">Inventory Source</span>
+                <div className="flex items-center gap-3 bg-black/40 border border-eve-border rounded px-3 py-2">
+                    <div className="flex-1">
+                        {appSettings?.warehouse_location_name ? (
+                            <div className="text-sm font-semibold text-eve-orange">{appSettings.warehouse_location_name}</div>
+                        ) : (
+                            <div className="text-sm text-eve-muted italic">All character hangars (Aggregated)</div>
+                        )}
+                    </div>
+                    <button 
+                        onClick={handleOpenPicker}
+                        className="text-[10px] font-bold uppercase bg-eve-orange/10 hover:bg-eve-orange/20 text-eve-orange border border-eve-orange/30 px-2 py-1 rounded transition-colors"
+                    >
+                        Select Container
+                    </button>
+                    {appSettings?.warehouse_location_id && (
+                        <button 
+                            onClick={() => handleSelectLocation(null)}
+                            className="text-[10px] font-bold uppercase text-red-400 hover:text-red-300"
+                        >
+                            Reset
+                        </button>
+                    )}
+                </div>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            {syncMsg && <span className="text-xs text-green-400">{syncMsg}</span>}
+
+          <div className="flex items-center gap-6 self-end md:self-center">
+            <div className="text-right">
+                <div className="text-[10px] uppercase font-bold text-eve-muted">Estimated Value</div>
+                <div className="text-2xl font-bold text-eve-orange">{fmtISK(totalValue)}</div>
+            </div>
             <button
               onClick={handleSync}
               disabled={syncing || loading}
-              className="px-4 py-1.5 bg-eve-orange hover:bg-eve-orange/90
-                         disabled:opacity-40 text-white text-sm font-semibold rounded transition-colors"
+              className="bg-eve-orange hover:bg-eve-orange/80 disabled:opacity-50 text-white px-5 py-2.5 rounded font-bold text-sm transition-all active:scale-95 shadow-lg shadow-eve-orange/20"
             >
-              {syncing ? "Syncing…" : "Sync from ESI"}
+              {syncing ? "Syncing…" : "Sync Assets"}
             </button>
           </div>
         </div>
 
-        {error && (
-          <div className="bg-red-900/30 border border-red-700/50 rounded-lg px-4 py-3 text-red-300 text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* Warehouse source */}
-        {!showPicker ? (
-          <div className="bg-eve-surface border border-eve-border rounded-lg p-4 flex items-center gap-4 flex-wrap">
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold uppercase tracking-widest text-eve-muted mb-1">
-                Warehouse Source
-              </div>
-              {sourceName ? (
-                <div className="text-sm text-eve-text truncate">{sourceName}</div>
-              ) : (
-                <div className="text-sm text-eve-muted/60">
-                  All characters' hangars (aggregated)
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {sourceName && (
-                <button
-                  onClick={handleClearSource}
-                  className="text-xs text-eve-muted hover:text-red-400 transition-colors px-2 py-1"
-                >
-                  Clear
-                </button>
-              )}
-              <button
-                onClick={() => setShowPicker(true)}
-                className="px-3 py-1.5 bg-eve-bg border border-eve-border rounded
-                           text-xs text-eve-muted hover:text-eve-orange hover:border-eve-orange/60
-                           transition-colors"
-              >
-                {sourceName ? "Change Source" : "Set Source"}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <SourcePicker
-            current={{
-              char_id: appSettings?.warehouse_character_id ?? null,
-              loc_id:  appSettings?.warehouse_location_id ?? null,
-            }}
-            onPick={handlePickSource}
-            onCancel={() => setShowPicker(false)}
-          />
-        )}
-
-        {/* Filter */}
-        {items.length > 0 && !showPicker && (
-          <input
-            type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter items…"
-            className="w-full max-w-xs bg-eve-surface border border-eve-border rounded px-3 py-1.5
-                       text-sm text-eve-text focus:outline-none focus:border-eve-orange"
-          />
-        )}
-
-        {/* Items table */}
-        {!showPicker && (
-          loading ? (
-            <div className="text-center py-10 text-eve-muted text-sm">Loading…</div>
-          ) : items.length === 0 ? (
-            <div className="text-center py-16 text-eve-muted text-sm">
-              <div className="text-4xl mb-3">📦</div>
-              <div>No items found.</div>
-              <div className="mt-1 text-eve-muted/60">
-                Click <strong className="text-eve-text">Sync from ESI</strong> or set a warehouse source.
-              </div>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-eve-border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-eve-border bg-eve-surface">
-                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-widest text-eve-muted">Item</th>
-                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-widest text-eve-muted w-36">Quantity</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((item, i) => (
-                    <tr key={`${item.type_id}-${i}`} className="border-b border-eve-border/50 hover:bg-eve-surface/50">
-                      <td className="px-3 py-2 flex items-center gap-2">
-                        <img
-                          src={`https://images.evetech.net/types/${item.type_id}/icon?size=32`}
-                          alt=""
-                          className="w-6 h-6 rounded border border-eve-border"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        {/* Location Picker Modal */}
+        {showPicker && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <div className="bg-eve-surface border border-eve-border rounded-lg w-full max-w-2xl flex flex-col max-h-[80vh] shadow-2xl">
+                    <div className="p-4 border-b border-eve-border flex justify-between items-center">
+                        <div>
+                            <h2 className="text-lg font-bold text-white">Select Inventory Container</h2>
+                            <p className="text-xs text-eve-muted">Choose a specific station hangar or container as your warehouse source.</p>
+                        </div>
+                        <button onClick={() => setShowPicker(false)} className="text-eve-muted hover:text-white text-xl">×</button>
+                    </div>
+                    
+                    <div className="p-4 bg-eve-bg/50">
+                        <input 
+                            type="text" 
+                            placeholder="Search by station or character name..."
+                            value={locSearch}
+                            onChange={(e) => setLocSearch(e.target.value)}
+                            className="w-full bg-eve-bg border border-eve-border rounded px-3 py-2 text-sm focus:outline-none focus:border-eve-orange"
                         />
-                        <span className="text-eve-text">{item.type_name}</span>
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono text-eve-text">
-                        {item.quantity.toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                        {loadingLocs ? (
+                            <div className="text-center py-10 text-eve-muted italic">Scanning assets across all characters...</div>
+                        ) : filteredLocs.length === 0 ? (
+                            <div className="text-center py-10 text-eve-muted">No matching locations found.</div>
+                        ) : (
+                            filteredLocs.map((l, i) => (
+                                <div 
+                                    key={i} 
+                                    onClick={() => handleSelectLocation(l)}
+                                    className="bg-eve-bg/40 border border-eve-border/50 hover:border-eve-orange/50 hover:bg-eve-orange/5 rounded p-3 cursor-pointer group transition-all"
+                                >
+                                    <div className="flex justify-between items-start">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-xs font-bold text-eve-muted uppercase tracking-tighter mb-0.5">{l.character_name}</div>
+                                            <div className="text-sm font-semibold text-eve-text group-hover:text-white truncate">{l.location_name}</div>
+                                        </div>
+                                        <div className="text-right ml-4">
+                                            <div className="text-[10px] font-bold text-eve-orange uppercase">{l.type_count} Types</div>
+                                            <div className="text-[10px] text-eve-muted">{l.total_quantity.toLocaleString()} Items</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                    
+                    <div className="p-4 border-t border-eve-border bg-eve-bg/30 text-right">
+                         <button onClick={() => setShowPicker(false)} className="text-xs font-bold uppercase text-eve-muted hover:text-white px-4">Close</button>
+                    </div>
+                </div>
             </div>
-          )
+        )}
+
+        {/* Categories */}
+        <div className="bg-eve-surface/30 border border-eve-border/50 rounded-lg p-3 flex flex-wrap gap-1.5 items-center">
+            <span className="text-[10px] uppercase font-bold text-eve-muted mr-2">Filter Categories:</span>
+            {categories.map(cat => (
+                <button
+                    key={cat}
+                    onClick={() => handleToggleCategory(cat)}
+                    className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${
+                        selectedCategories.includes(cat)
+                            ? "bg-eve-orange border-eve-orange text-white shadow-lg shadow-eve-orange/20"
+                            : "bg-eve-bg border-eve-border text-eve-muted hover:border-eve-muted hover:text-eve-text"
+                    }`}
+                >
+                    {cat}
+                </button>
+            ))}
+            {selectedCategories.length > 0 && (
+                 <button onClick={() => setSelectedCategories([])} className="text-[10px] font-bold text-red-400 ml-2 uppercase hover:underline">Reset Filters</button>
+            )}
+        </div>
+
+        {loading && <Spinner label="Loading warehouse data..." />}
+        {error && <div className="bg-red-900/20 border border-red-700/50 rounded p-4 text-red-400 text-sm">{error}</div>}
+
+        {!loading && (
+          <div className="bg-eve-surface border border-eve-border rounded-lg overflow-hidden shadow-2xl">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="bg-eve-bg/50 text-eve-muted text-[10px] uppercase tracking-wider font-bold border-b border-eve-border">
+                  <th className="px-4 py-3">Item / Category</th>
+                  <th className="px-4 py-3 text-right">Quantity</th>
+                  <th className="px-4 py-3 text-right">Est. Unit Price</th>
+                  <th className="px-4 py-3 text-right">Total Value</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-eve-border/50">
+                {filtered.length === 0 ? (
+                    <tr>
+                        <td colSpan={4} className="px-4 py-20 text-center text-eve-muted italic">
+                            No items found in this warehouse source.
+                        </td>
+                    </tr>
+                ) : filtered.map(item => (
+                  <tr key={item.type_id} className="hover:bg-white/5 transition-colors group">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                          <img 
+                            src={`https://images.evetech.net/types/${item.type_id}/icon?size=32`} 
+                            alt="" 
+                            className="w-8 h-8 rounded border border-eve-border bg-black/40"
+                            onError={(e) => (e.target as HTMLImageElement).style.display = 'none'}
+                          />
+                          <div>
+                            <div className="font-semibold text-eve-text group-hover:text-eve-orange transition-colors">{item.type_name}</div>
+                            <div className="text-[10px] text-eve-muted uppercase font-bold">{item.category_name}</div>
+                          </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-eve-text font-mono font-medium">
+                      {item.quantity.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right text-eve-muted font-mono">
+                      {fmtISK(item.estimated_price || 0)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-eve-orange font-bold font-mono">
+                      {fmtISK((item.estimated_price || 0) * item.quantity)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </main>
     </div>

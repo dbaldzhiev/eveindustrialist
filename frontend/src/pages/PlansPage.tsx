@@ -509,8 +509,7 @@ function BpCopyRow({
   noPrices: boolean;
   onAdd: (bp: BlueprintResult, runs: number) => void;
 }) {
-  const maxRuns = bp.is_bpo ? 999999 : bp.runs;
-  const [runs, setRuns] = useState(bp.runs);
+  const maxRuns = bp.is_bpo ? 1 : bp.runs;
   const profitPerRun = bp.runs > 0 ? bp.profit / bp.runs : 0;
 
   return (
@@ -518,26 +517,17 @@ function BpCopyRow({
                     rounded hover:border-eve-orange/30 transition-colors">
       {!noPrices && (
         <div className={`flex-1 min-w-0 text-[10px] font-mono font-semibold
-                         ${profitPerRun * runs >= 0 ? "text-green-400" : "text-red-400"}`}>
-          {isk(profitPerRun * runs)} ISK
+                         ${profitPerRun * maxRuns >= 0 ? "text-green-400" : "text-red-400"}`}>
+          {isk(profitPerRun * maxRuns)} ISK
         </div>
       )}
       {noPrices && <div className="flex-1" />}
-      <div className="flex items-center gap-1 shrink-0">
-        <span className="text-[8px] text-eve-muted uppercase">Runs</span>
-        <input
-          type="number" min="1" max={bp.is_bpo ? undefined : maxRuns}
-          value={runs}
-          onChange={e => {
-            const v = parseInt(e.target.value) || 1;
-            setRuns(bp.is_bpo ? Math.max(1, v) : Math.min(Math.max(1, v), maxRuns));
-          }}
-          className="w-14 bg-black/40 border border-eve-border/40 rounded px-1 py-0.5
-                     text-[11px] text-center text-eve-text focus:outline-none focus:border-eve-orange"
-        />
+      <div className="flex items-center gap-1 shrink-0 mr-2">
+        <span className="text-[10px] text-eve-text font-bold">{maxRuns}</span>
+        <span className="text-[8px] text-eve-muted uppercase">Run{maxRuns !== 1 ? "s" : ""}</span>
       </div>
       <button
-        onClick={() => onAdd(bp, runs)}
+        onClick={() => onAdd(bp, maxRuns)}
         className="px-2.5 py-1 bg-eve-orange/20 hover:bg-eve-orange text-eve-orange
                    hover:text-white text-[10px] font-bold uppercase rounded transition-all">
         + Add
@@ -807,6 +797,15 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
     });
   }, []);
 
+  const updateQueueRuns = useCallback((id: string, runs: number) => {
+    setQueue(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const max = item.bp.is_bpo ? 1 : item.bp.runs;
+      const r = Math.min(Math.max(1, runs), max);
+      return { ...item, chosen_runs: r };
+    }));
+  }, []);
+
   // Aggregate totals with linear scaling
   const { totalProfit, totalMatCost, totalRevenue, aggregatedMats } = useMemo(() => {
     let totalProfit = 0, totalMatCost = 0, totalRevenue = 0;
@@ -1006,9 +1005,15 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
                               <span className="text-[11px] font-bold text-eve-text truncate">
                                 {item.bp.blueprint_name}
                               </span>
-                              <span className="text-[9px] text-eve-muted bg-eve-bg px-1 rounded shrink-0">
-                                ×{item.chosen_runs}
-                              </span>
+                              <div className="flex items-center bg-eve-bg border border-eve-border/40 rounded px-1 shrink-0">
+                                <span className="text-[8px] text-eve-muted mr-0.5">×</span>
+                                <input
+                                  type="number" min="1" max={item.bp.is_bpo ? 999999 : item.bp.runs}
+                                  value={item.chosen_runs}
+                                  onChange={e => updateQueueRuns(item.id, parseInt(e.target.value) || 1)}
+                                  className="w-10 bg-transparent text-[10px] font-bold text-eve-text focus:outline-none text-center"
+                                />
+                              </div>
                               <span className="text-[9px] text-eve-muted shrink-0">
                                 ME{item.bp.me}/TE{item.bp.te}
                               </span>

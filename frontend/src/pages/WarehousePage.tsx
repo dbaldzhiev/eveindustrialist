@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
-import { 
-    fetchWarehouse, fetchAppSettings, syncWarehouse, 
-    fetchAssetLocations, saveAppSettings 
+import {
+    fetchWarehouse, fetchAppSettings,
+    fetchAssetLocations, saveAppSettings
 } from "../api/client";
 import { Spinner, fmtISK } from "./DashboardPage";
+import { useRefresh } from "../context/RefreshContext";
 import type { WarehouseItem, Character, AppSettings, AssetLocation } from "../types";
 
 interface Props {
@@ -14,10 +15,10 @@ interface Props {
 export default function WarehousePage({ character }: Props) {
   const [items, setItems]             = useState<WarehouseItem[]>([]);
   const [loading, setLoading]         = useState(true);
-  const [syncing, setSyncing]         = useState(false);
   const [error, setError]             = useState<string | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
-  
+  const { esiKey } = useRefresh();
+
   // Location Picker State
   const [showPicker, setShowPicker]   = useState(false);
   const [locations, setLocations]     = useState<AssetLocation[]>([]);
@@ -41,21 +42,7 @@ export default function WarehousePage({ character }: Props) {
 
   useEffect(() => {
     loadData();
-  }, []);
-
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      await syncWarehouse();
-      // After sync, re-fetch warehouse items to respect the current source (container or aggregated)
-      const inv = await fetchWarehouse();
-      setItems(inv);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setSyncing(false);
-    }
-  };
+  }, [esiKey]);
 
   const handleOpenPicker = async () => {
     setShowPicker(true);
@@ -165,13 +152,6 @@ export default function WarehousePage({ character }: Props) {
                 <div className="text-[10px] uppercase font-bold text-eve-muted">Estimated Value</div>
                 <div className="text-2xl font-bold text-eve-orange">{fmtISK(totalValue)}</div>
             </div>
-            <button
-              onClick={handleSync}
-              disabled={syncing || loading}
-              className="bg-eve-orange hover:bg-eve-orange/80 disabled:opacity-50 text-white px-5 py-2.5 rounded font-bold text-sm transition-all active:scale-95 shadow-lg shadow-eve-orange/20"
-            >
-              {syncing ? "Syncing…" : "Sync Assets"}
-            </button>
           </div>
         </div>
 

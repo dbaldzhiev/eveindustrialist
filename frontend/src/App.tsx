@@ -10,6 +10,7 @@ import WarehousePage from "./pages/WarehousePage";
 import SlotsPage from "./pages/SlotsPage";
 import PlansPage from "./pages/PlansPage";
 import SettingsPage from "./pages/SettingsPage";
+import { RefreshProvider } from "./context/RefreshContext";
 import { fetchMe } from "./api/client";
 import type { Character } from "./types";
 
@@ -31,6 +32,7 @@ export default function App() {
   }
 
   return (
+    <RefreshProvider>
     <Routes>
       <Route
         path="/"
@@ -74,5 +76,6 @@ export default function App() {
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </RefreshProvider>
   );
 }

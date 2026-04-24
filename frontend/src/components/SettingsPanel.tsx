@@ -8,7 +8,6 @@ interface Props {
   settings: Settings;
   onChange: (s: Settings) => void;
   onApply: () => void;
-  onRefresh?: () => void;
   loading: boolean;
   /** Extra fields shown only in Explorer mode */
   explorerMode?: boolean;
@@ -106,7 +105,6 @@ export default function SettingsPanel({
   settings,
   onChange,
   onApply,
-  onRefresh,
   loading,
   explorerMode = false,
 }: Props) {
@@ -220,17 +218,6 @@ export default function SettingsPanel({
         </label>
 
         <div className="ml-auto flex items-center gap-3">
-          {onRefresh && (
-            <button
-              onClick={onRefresh}
-              disabled={loading}
-              className="px-4 py-2 text-eve-orange border border-eve-orange/30 hover:bg-eve-orange/10
-                         disabled:opacity-40 disabled:cursor-not-allowed
-                         text-sm font-semibold rounded transition-colors"
-            >
-              Refresh Prices
-            </button>
-          )}
           <button
             onClick={onApply}
             disabled={loading || !settings.solar_system_id}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { fetchSlots } from "../api/client";
+import { useRefresh } from "../context/RefreshContext";
 import type { Character, CharacterSlots, ActiveJob } from "../types";
 
 interface Props {
@@ -156,6 +157,7 @@ export default function SlotsPage({ character }: Props) {
   const [slots, setSlots]     = useState<CharacterSlots[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
+  const { esiKey } = useRefresh();
 
   const load = () => {
     setLoading(true);
@@ -166,7 +168,7 @@ export default function SlotsPage({ character }: Props) {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [esiKey]);
 
   return (
     <div className="min-h-screen bg-eve-bg font-eve">
@@ -175,13 +177,6 @@ export default function SlotsPage({ character }: Props) {
       <main className="max-w-screen-2xl mx-auto px-4 py-6 space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold text-eve-text">Dashboard</h1>
-          <button
-            onClick={load}
-            disabled={loading}
-            className="text-xs text-eve-muted hover:text-eve-orange transition-colors disabled:opacity-40"
-          >
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
         </div>
 
         {error && (

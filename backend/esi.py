@@ -218,13 +218,15 @@ RESEARCH_ACTIVITIES = {3, 4, 5, 8}
 REACTION_ACTIVITIES = {9, 11}
 
 
-def get_character_jobs(character_id: int, access_token: str) -> list[dict]:
+def get_character_jobs(character_id: int, access_token: str,
+                        force_refresh: bool = False) -> list[dict]:
     """
     Return active industry jobs for a character. Cached for 5 minutes.
     """
-    cached = get_cached_jobs(character_id)
-    if cached is not None:
-        return [j for j in cached if j["status"] == "active"]
+    if not force_refresh:
+        cached = get_cached_jobs(character_id)
+        if cached is not None:
+            return [j for j in cached if j["status"] == "active"]
 
     raw = _esi_get(
         f"/characters/{character_id}/industry/jobs/",

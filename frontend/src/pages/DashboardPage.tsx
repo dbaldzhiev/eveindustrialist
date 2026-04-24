@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
 import BlueprintTable from "../components/BlueprintTable";
 import { fetchBlueprints, fetchAppSettings } from "../api/client";
+import { useRefresh } from "../context/RefreshContext";
 import type { BlueprintResult, Character, Settings } from "../types";
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -37,6 +38,7 @@ export default function DashboardPage({ character }: Props) {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
   const [hasLoaded, setHasLoaded]   = useState(false);
+  const { pricesKey } = useRefresh();
 
   // Quick filters
   const [showBpo, setShowBpo]                   = useState(true);
@@ -45,7 +47,7 @@ export default function DashboardPage({ character }: Props) {
   const [showUnprofitable, setShowUnprofitable] = useState(true);
   const [showGroups, setShowGroups]             = useState(true);
 
-  // Fetch global settings and auto-calculate
+  // Fetch global settings and auto-calculate; re-run when prices are globally refreshed
   useEffect(() => {
     async function init() {
       try {
@@ -80,8 +82,8 @@ export default function DashboardPage({ character }: Props) {
         setSettings(newSettings);
 
         if (newSettings.solar_system_id && newSettings.solar_system_id > 0) {
-          // Always fetch all blueprints (including losses) for frontend filtering
-          const results = await fetchBlueprints({ ...newSettings, min_profit: -1e15 }, false, "build");
+          const forceRefresh = pricesKey > 0;
+          const results = await fetchBlueprints({ ...newSettings, min_profit: -1e15 }, forceRefresh, "build");
           setBlueprints(results);
           setHasLoaded(true);
         } else {
@@ -94,20 +96,10 @@ export default function DashboardPage({ character }: Props) {
         setLoading(false);
       }
     }
-    init();
-  }, []);
-
-  const handleRefresh = async () => {
     setLoading(true);
-    try {
-      const results = await fetchBlueprints({ ...settings, min_profit: -1e15 }, true, "build");
-      setBlueprints(results);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to refresh prices");
-    } finally {
-      setLoading(false);
-    }
-  };
+    init();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pricesKey]);
 
   const profitable = blueprints.filter((b) => b.profit > 0).length;
 
@@ -161,12 +153,6 @@ export default function DashboardPage({ character }: Props) {
                 </div>
               </div>
 
-              <button
-                onClick={handleRefresh}
-                className="text-eve-orange hover:text-eve-orange/80 font-semibold uppercase tracking-tighter transition-colors"
-              >
-                Refresh Prices
-              </button>
             </div>
             <div className="text-[10px] uppercase tracking-wider hidden xl:block">
               Calculated using global facility settings

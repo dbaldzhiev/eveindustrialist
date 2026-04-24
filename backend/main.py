@@ -487,6 +487,47 @@ def market_refresh():
     return {"ok": True}
 
 
+@app.get("/api/cache/status")
+def cache_status(session: str | None = Cookie(None)):
+    primary_id = _primary(session)
+    char_ids   = get_group_character_ids(primary_id)
+
+    from database import _query_one as _qo
+    market_row = _qo("SELECT MAX(updated_at) AS ts FROM market_price_cache")
+    market_at  = market_row["ts"] if market_row else None
+
+    esi_at = None
+    if char_ids:
+        ph = ",".join("?" * len(char_ids))
+        jobs_row   = _qo(f"SELECT MAX(updated_at) AS ts FROM jobs_cache   WHERE character_id IN ({ph})", tuple(char_ids))
+        assets_row = _qo(f"SELECT MAX(updated_at) AS ts FROM asset_cache  WHERE character_id IN ({ph})", tuple(char_ids))
+        ts_list = [r["ts"] for r in [jobs_row, assets_row] if r and r["ts"]]
+        esi_at  = max(ts_list) if ts_list else None
+
+    return {"market_updated_at": market_at, "esi_updated_at": esi_at}
+
+
+@app.post("/api/esi/refresh")
+def esi_refresh(session: str | None = Cookie(None)):
+    primary_id = _primary(session)
+    char_ids   = get_group_character_ids(primary_id)
+
+    errors: list[str] = []
+    for cid in char_ids:
+        try:
+            token = get_access_token(cid)
+            get_character_assets(cid, token, force_refresh=True)
+        except Exception as e:
+            errors.append(f"assets:{cid}:{e}")
+        try:
+            token = get_access_token(cid)
+            get_character_jobs(cid, token, force_refresh=True)
+        except Exception as e:
+            errors.append(f"jobs:{cid}:{e}")
+
+    return {"ok": True, "errors": errors}
+
+
 @app.get("/api/market/decryptors")
 def market_decryptors():
     return DECRYPTORS

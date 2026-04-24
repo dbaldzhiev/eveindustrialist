@@ -4,6 +4,7 @@ import SettingsPanel from "../components/SettingsPanel";
 import BlueprintTable from "../components/BlueprintTable";
 import { fetchExplore, fetchAppSettings } from "../api/client";
 import { DEFAULT_SETTINGS, StatCard, Spinner, fmtISK } from "./DashboardPage";
+import { useRefresh } from "../context/RefreshContext";
 import type { BlueprintResult, Character, Settings, SolarSystem } from "../types";
 
 interface Props {
@@ -16,6 +17,7 @@ export default function ExplorerPage({ character }: Props) {
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [hasLoaded, setHasLoaded]   = useState(false);
+  const { pricesKey } = useRefresh();
 
   // Fetch global settings on mount
   useEffect(() => {
@@ -42,7 +44,7 @@ export default function ExplorerPage({ character }: Props) {
       .catch((err) => console.error("Failed to fetch app settings:", err));
   }, []);
 
-  const handleApply = async () => {
+  const handleApply = async (forceRefresh = false) => {
     if (!settings.solar_system_id) {
       setError("No manufacturing system configured. Please set one in Settings.");
       return;
@@ -50,7 +52,7 @@ export default function ExplorerPage({ character }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const results = await fetchExplore(settings);
+      const results = await fetchExplore(settings, forceRefresh);
       setBlueprints(results);
       setHasLoaded(true);
     } catch (e: unknown) {
@@ -60,17 +62,12 @@ export default function ExplorerPage({ character }: Props) {
     }
   };
 
-  const handleRefresh = async () => {
-    setLoading(true);
-    try {
-      const results = await fetchExplore(settings, true);
-      setBlueprints(results);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to refresh prices");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Re-run with fresh prices when globally refreshed (only if results already showing)
+  useEffect(() => {
+    if (!hasLoaded || pricesKey === 0) return;
+    handleApply(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pricesKey]);
 
   const profitable = blueprints.filter((b) => b.profit > 0).length;
 
@@ -89,7 +86,6 @@ export default function ExplorerPage({ character }: Props) {
           settings={settings}
           onChange={setSettings}
           onApply={handleApply}
-          onRefresh={handleRefresh}
           loading={loading}
           explorerMode
         />

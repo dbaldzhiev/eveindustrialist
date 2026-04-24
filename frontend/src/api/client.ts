@@ -345,3 +345,17 @@ export async function fetchDecryptors(): Promise<Decryptor[]> {
 export async function refreshMarketPrices(): Promise<void> {
   await api.post("/api/market/refresh");
 }
+
+export interface CacheStatus {
+  market_updated_at: number | null;
+  esi_updated_at:    number | null;
+}
+
+export async function fetchCacheStatus(): Promise<CacheStatus> {
+  const { data } = await api.get<CacheStatus>("/api/cache/status");
+  return data;
+}
+
+export async function refreshEsi(): Promise<void> {
+  await api.post("/api/esi/refresh");
+}

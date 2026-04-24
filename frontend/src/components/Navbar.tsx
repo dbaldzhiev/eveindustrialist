@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import type { Character, CharacterGroup } from "../types";
 import { fetchCharacterGroup } from "../api/client";
+import { useRefresh } from "../context/RefreshContext";
 
 interface Props {
   character: Character;
@@ -19,16 +20,37 @@ const TABS = [
   { to: "/settings",  label: "Settings"     },
 ];
 
+function timeAgo(ts: number | null): string {
+  if (!ts) return "never";
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60)   return `${sec}s ago`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
+}
+
 export default function Navbar({ character }: Props) {
   const [group, setGroup] = useState<CharacterGroup | null>(null);
   const [showCharMenu, setShowCharMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [, setTick] = useState(0);
+
+  const {
+    pricesAt, esiAt,
+    refreshingPrices, refreshingEsi,
+    doRefreshPrices, doRefreshEsi,
+  } = useRefresh();
 
   useEffect(() => {
     fetchCharacterGroup().then(setGroup).catch(() => {});
   }, []);
 
-  // Close dropdown on outside click
+  // Re-render every minute so "X ago" stays accurate
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -39,24 +61,16 @@ export default function Navbar({ character }: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const handleLogout = () => {
-    window.location.href = "/auth/logout";
-  };
-
-  const handleAddCharacter = () => {
-    window.location.href = "/auth/add-character";
-  };
-
   const characters = group?.characters ?? [character];
 
   return (
     <header className="border-b border-eve-border bg-eve-surface sticky top-0 z-40">
+      {/* Main nav row */}
       <div className="max-w-screen-2xl mx-auto px-4 h-12 flex items-center gap-6">
         <span className="font-bold tracking-wider text-eve-text shrink-0">
           EVE <span className="text-eve-orange">Industrialist</span>
         </span>
 
-        {/* Tab navigation */}
         <nav className="flex items-center gap-1 flex-1">
           {TABS.map(({ to, label }) => (
             <NavLink
@@ -81,7 +95,6 @@ export default function Navbar({ character }: Props) {
             onClick={() => setShowCharMenu((p) => !p)}
             className="flex items-center gap-2 px-2 py-1 rounded hover:bg-eve-bg transition-colors"
           >
-            {/* Show avatars for all characters (max 3) */}
             <div className="flex -space-x-1.5">
               {characters.slice(0, 3).map((c) => (
                 <img
@@ -112,7 +125,6 @@ export default function Navbar({ character }: Props) {
               <div className="px-3 py-1.5 text-xs text-eve-muted uppercase tracking-widest font-semibold border-b border-eve-border/50 mb-1">
                 Characters
               </div>
-
               {characters.map((c) => (
                 <div key={c.character_id} className="flex items-center gap-2 px-3 py-1.5">
                   <img
@@ -126,17 +138,16 @@ export default function Navbar({ character }: Props) {
                   )}
                 </div>
               ))}
-
               <div className="border-t border-eve-border/50 mt-1 pt-1">
                 <button
-                  onClick={handleAddCharacter}
+                  onClick={() => { window.location.href = "/auth/add-character"; }}
                   className="w-full text-left px-3 py-1.5 text-sm text-eve-muted
                              hover:text-eve-orange hover:bg-eve-bg transition-colors"
                 >
                   + Add Character
                 </button>
                 <button
-                  onClick={handleLogout}
+                  onClick={() => { window.location.href = "/auth/logout"; }}
                   className="w-full text-left px-3 py-1.5 text-sm text-eve-muted
                              hover:text-red-400 hover:bg-eve-bg transition-colors"
                 >
@@ -145,6 +156,51 @@ export default function Navbar({ character }: Props) {
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Global refresh bar */}
+      <div className="border-t border-eve-border/40 bg-eve-bg/60">
+        <div className="max-w-screen-2xl mx-auto px-4 h-8 flex items-center gap-6">
+          {/* Prices */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={doRefreshPrices}
+              disabled={refreshingPrices}
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded
+                         border border-eve-border/60 text-xs text-eve-muted
+                         hover:border-eve-orange/50 hover:text-eve-orange
+                         disabled:opacity-40 disabled:cursor-not-allowed
+                         transition-colors"
+            >
+              <span className={refreshingPrices ? "animate-spin" : ""}>↻</span>
+              {refreshingPrices ? "Refreshing…" : "Refresh Prices"}
+            </button>
+            <span className="text-xs text-eve-muted/50">
+              {refreshingPrices ? "" : timeAgo(pricesAt)}
+            </span>
+          </div>
+
+          <div className="w-px h-4 bg-eve-border/40" />
+
+          {/* ESI */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={doRefreshEsi}
+              disabled={refreshingEsi}
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded
+                         border border-eve-border/60 text-xs text-eve-muted
+                         hover:border-eve-orange/50 hover:text-eve-orange
+                         disabled:opacity-40 disabled:cursor-not-allowed
+                         transition-colors"
+            >
+              <span className={refreshingEsi ? "animate-spin" : ""}>↻</span>
+              {refreshingEsi ? "Syncing…" : "Refresh ESI"}
+            </button>
+            <span className="text-xs text-eve-muted/50">
+              {refreshingEsi ? "" : timeAgo(esiAt)}
+            </span>
+          </div>
         </div>
       </div>
     </header>

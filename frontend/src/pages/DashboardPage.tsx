@@ -181,7 +181,7 @@ export default function DashboardPage({ character }: Props) {
 
         {loading && <Spinner label="Fetching blueprints and calculating profits using global settings…" />}
 
-        {!loading && hasLoaded && <BlueprintTable blueprints={filtered} showGroups={showGroups} />}
+        {!loading && hasLoaded && <BlueprintTable blueprints={filtered} showGroups={showGroups} activity="build" />}
 
         {!loading && !hasLoaded && !error && (
           <div className="text-center py-20 text-eve-muted text-sm">

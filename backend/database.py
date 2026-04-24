@@ -465,6 +465,58 @@ def get_invention_variants(bp_type_ids: list[int]) -> list[dict]:
     return results
 
 
+def get_blueprint_required_skills_batch(
+    type_ids: list[int], activity_id: int
+) -> dict[int, list[dict]]:
+    """Return {blueprint_type_id: [{skill_id, skill_name, level}]} for the given activity."""
+    if not type_ids:
+        return {}
+    conn = get_db()
+    result: dict[int, list[dict]] = {}
+    try:
+        for chunk in _chunk(type_ids):
+            ph = ",".join("?" * len(chunk))
+            rows = conn.execute(
+                f"""
+                SELECT ias.typeID, ias.skillID, t.typeName AS skill_name, ias.level
+                FROM   industryActivitySkills ias
+                JOIN   invTypes t ON t.typeID = ias.skillID
+                WHERE  ias.typeID IN ({ph}) AND ias.activityID = ?
+                """,
+                (*chunk, activity_id),
+            ).fetchall()
+            for row in rows:
+                tid = row["typeID"]
+                if tid not in result:
+                    result[tid] = []
+                result[tid].append({
+                    "skill_id":   row["skillID"],
+                    "skill_name": row["skill_name"],
+                    "level":      row["level"],
+                })
+    finally:
+        conn.close()
+    return result
+
+
+def get_cached_all_skills_for_characters(character_ids: list[int]) -> dict[int, dict[int, int]]:
+    """Return {character_id: {skill_type_id: trained_level}} from local cache."""
+    if not character_ids:
+        return {}
+    conn = get_db()
+    result: dict[int, dict[int, int]] = {cid: {} for cid in character_ids}
+    try:
+        ph = ",".join("?" * len(character_ids))
+        for row in conn.execute(
+            f"SELECT character_id, skill_id, trained_level FROM skills_cache WHERE character_id IN ({ph})",
+            character_ids,
+        ).fetchall():
+            result[row["character_id"]][row["skill_id"]] = row["trained_level"]
+    finally:
+        conn.close()
+    return result
+
+
 def get_all_manufacturing_bp_ids() -> list[int]:
     rows = _query(
         """

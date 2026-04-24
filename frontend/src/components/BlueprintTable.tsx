@@ -1,9 +1,12 @@
 import React, { useState, useMemo } from "react";
 import type { BlueprintResult, SortKey } from "../types";
+import { useCharacterSkillData, getEligibleForBp } from "../hooks/useEligibleCharacters";
+import { CharacterMiniPortraits } from "./CharacterMiniPortraits";
 
 interface Props {
-  blueprints: BlueprintResult[];
+  blueprints:  BlueprintResult[];
   showGroups?: boolean;
+  activity?:   string;
 }
 
 const ISK_FORMAT = new Intl.NumberFormat("en-US", {
@@ -20,10 +23,12 @@ export function fmtISK(val: number) {
   return ISK_FORMAT.format(val) + " ISK";
 }
 
-export default function BlueprintTable({ blueprints }: Props) {
+export default function BlueprintTable({ blueprints, activity }: Props) {
   const [sortKey, setSortKey]     = useState<SortKey>("profit");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const eligibleChars = useEligibleCharacters(activity ?? "");
+  const colCount = activity ? 7 : 6;
 
   // Category Filtering
   const categories = useMemo(() => {
@@ -122,6 +127,7 @@ export default function BlueprintTable({ blueprints }: Props) {
               <th className="px-4 py-3 text-right cursor-pointer hover:text-eve-text" onClick={() => toggleSort("isk_per_hour")}>
                 ISK/Hr {sortKey === "isk_per_hour" && (sortOrder === "asc" ? "↑" : "↓")}
               </th>
+              {activity && <th className="px-3 py-3 text-center">Who</th>}
               <th className="px-2 py-3"></th>
             </tr>
           </thead>
@@ -163,6 +169,11 @@ export default function BlueprintTable({ blueprints }: Props) {
                     <td className="px-4 py-3 text-right text-eve-text font-medium">
                       {fmtISK(bp.isk_per_hour)}
                     </td>
+                    {activity && (
+                      <td className="px-3 py-3">
+                        <CharacterMiniPortraits characters={eligibleChars} size={22} />
+                      </td>
+                    )}
                     <td className="px-2 py-3 text-right">
                       <span className="text-eve-muted text-xs">{isExpanded ? "−" : "+"}</span>
                     </td>
@@ -170,7 +181,7 @@ export default function BlueprintTable({ blueprints }: Props) {
 
                   {isExpanded && (
                     <tr className="bg-eve-bg/30">
-                      <td colSpan={6} className="px-4 py-6 border-b border-eve-border">
+                      <td colSpan={colCount} className="px-4 py-6 border-b border-eve-border">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                           {/* Unit breakdown */}
                           <div className="space-y-4">

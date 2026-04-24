@@ -129,6 +129,19 @@ TABLES = {
             )
         """,
     },
+    "industryActivitySkills": {
+        "filename": "industryActivitySkills.csv.bz2",
+        "columns":  ["typeID", "activityID", "skillID", "level"],
+        "create": """
+            CREATE TABLE IF NOT EXISTS industryActivitySkills (
+                typeID      INTEGER,
+                activityID  INTEGER,
+                skillID     INTEGER,
+                level       INTEGER,
+                PRIMARY KEY (typeID, activityID, skillID)
+            )
+        """,
+    },
 }
 
 INDEX_SQL = [
@@ -138,6 +151,7 @@ INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_inv_name      ON invTypes (typeName)",
     "CREATE INDEX IF NOT EXISTS idx_sys_name      ON mapSolarSystems (solarSystemName)",
     "CREATE INDEX IF NOT EXISTS idx_sys_region    ON mapSolarSystems (regionID)",
+    "CREATE INDEX IF NOT EXISTS idx_ias_typeid    ON industryActivitySkills (typeID, activityID)",
 ]
 
 

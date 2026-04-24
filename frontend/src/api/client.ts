@@ -360,6 +360,7 @@ export interface CharacterSkillData {
     mass_reactions:      number;
     science:             number;
   };
+  all_skills?: Record<string, number>;  // skill_type_id (as string) → trained_level
 }
 
 export async function fetchCharacterSkills(): Promise<CharacterSkillData[]> {

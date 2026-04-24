@@ -212,7 +212,7 @@ export default function InventionPage({ character }: Props) {
 
         {loading && <Spinner label="Calculating invention opportunities..." />}
 
-        {!loading && hasLoaded && <BlueprintTable blueprints={filtered} showGroups={showGroups} />}
+        {!loading && hasLoaded && <BlueprintTable blueprints={filtered} showGroups={showGroups} activity="invent" />}
 
         {!loading && !hasLoaded && !error && (
           <div className="text-center py-20 text-eve-muted text-sm">

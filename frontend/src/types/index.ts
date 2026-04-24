@@ -33,6 +33,12 @@ export interface MaterialLine {
   total_cost: number;
 }
 
+export interface RequiredSkill {
+  skill_id:   number;
+  skill_name: string;
+  level:      number;
+}
+
 export interface BlueprintResult {
   blueprint_type_id: number;
   blueprint_name:    string;
@@ -47,6 +53,7 @@ export interface BlueprintResult {
   decryptor_name?:   string;
   bpc_count?:        number;
   bpc_total_runs?:   number;
+  required_skills?:  RequiredSkill[];
   material_cost:     number;
   job_cost:          number;
 

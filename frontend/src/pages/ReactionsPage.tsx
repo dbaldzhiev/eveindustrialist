@@ -163,7 +163,7 @@ export default function ReactionsPage({ character }: Props) {
 
         {loading && <Spinner label="Fetching owned reaction formulas and calculating profits…" />}
 
-        {!loading && hasLoaded && <BlueprintTable blueprints={filtered} />}
+        {!loading && hasLoaded && <BlueprintTable blueprints={filtered} activity="react" />}
 
         {!loading && !hasLoaded && !error && (
           <div className="text-center py-20 text-eve-muted text-sm">

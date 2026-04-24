@@ -22,6 +22,7 @@ from database import (
     get_plans, create_plan, rename_plan, delete_plan,
     get_plan_items, add_plan_item, update_plan_item, remove_plan_item,
     get_invention_variants, get_reaction_bp_ids,
+    get_blueprint_required_skills_batch, get_cached_all_skills_for_characters,
     _chunk,
 )
 from auth import (
@@ -142,14 +143,15 @@ def _calc_profits_for_bps(
         for var in variants:
             for d in test_decryptors:
                 invention_bps.append({
-                    "type_id":      var["result_bp_id"],
-                    "type_name":    var["result_bp_name"] + " (Potential)",
-                    "quantity":     1,
-                    "me":           2 + d["me_mod"],
-                    "te":           4 + d["te_mod"],
-                    "is_bpo":       False,
-                    "is_invention": True,
-                    "decryptor":    d,
+                    "type_id":        var["result_bp_id"],
+                    "source_type_id": var["base_bp_id"],
+                    "type_name":      var["result_bp_name"] + " (Potential)",
+                    "quantity":       1,
+                    "me":             2 + d["me_mod"],
+                    "te":             4 + d["te_mod"],
+                    "is_bpo":         False,
+                    "is_invention":   True,
+                    "decryptor":      d,
                 })
         all_calc_bps = invention_bps
     elif mode == "copy":
@@ -358,6 +360,22 @@ def _calc_profits_for_bps(
             if tid not in best_per_id or r["profit"] > best_per_id[tid]["profit"]:
                 best_per_id[tid] = r
         results = list(best_per_id.values())
+
+    # Attach per-blueprint skill requirements
+    if mode == "invent":
+        # Skills are on the T1 source blueprint (activityID=8)
+        source_id_map = {bp["type_id"]: bp.get("source_type_id", bp["type_id"]) for bp in all_calc_bps}
+        source_ids = list({v for v in source_id_map.values()})
+        skills_map = get_blueprint_required_skills_batch(source_ids, 8)
+        for r in results:
+            src = source_id_map.get(r["blueprint_type_id"])
+            r["required_skills"] = skills_map.get(src, []) if src else []
+    elif mode != "copy":
+        activity_id = 11 if mode == "react" else 1
+        type_ids = list({r["blueprint_type_id"] for r in results})
+        skills_map = get_blueprint_required_skills_batch(type_ids, activity_id)
+        for r in results:
+            r["required_skills"] = skills_map.get(r["blueprint_type_id"], [])
 
     results.sort(key=lambda x: x["profit"], reverse=True)
     return results
@@ -919,18 +937,23 @@ def characters_skills(session: str | None = Cookie(None)):
     chars      = get_group_characters(primary_id)
     name_map   = {c["character_id"]: c["character_name"] for c in chars}
 
+    # Read all cached skills in one query
+    cached = get_cached_all_skills_for_characters(char_ids)
+
     result = []
     for cid in char_ids:
         try:
             token  = get_access_token(cid)
-            skills = get_character_skills(cid, token)
-            named  = {name: skills.get(sid, 0) for name, sid in INDUSTRY_SKILL_IDS.items()}
+            skills = get_character_skills(cid, token)   # refreshes cache if stale
         except Exception:
-            named  = {name: 0 for name in INDUSTRY_SKILL_IDS}
+            skills = {}
+        all_skills = cached.get(cid, skills)  # prefer freshly-fetched, fall back to pre-cache
+        named = {name: all_skills.get(sid, 0) for name, sid in INDUSTRY_SKILL_IDS.items()}
         result.append({
             "character_id":   cid,
             "character_name": name_map.get(cid, f"Character {cid}"),
-            "skills": named,
+            "skills":         named,
+            "all_skills":     {str(k): v for k, v in all_skills.items()},
         })
     return result
 

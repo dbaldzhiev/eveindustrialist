@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import Navbar from "../components/Navbar";
-import { useEligibleCharacters, type EligibleChar } from "../hooks/useEligibleCharacters";
+import { useEligibilityMap, type EligibleChar } from "../hooks/useEligibleCharacters";
 import { CharacterMiniPortraits } from "../components/CharacterMiniPortraits";
 import {
   fetchPlans, createPlan, deletePlan,
@@ -501,15 +501,16 @@ interface BpGroup {
 }
 
 function BpCopyRow({
-  bp, noPrices, eligibleChars, onAdd,
+  bp, noPrices, eligibilityMap, onAdd,
 }: {
   bp: BlueprintResult;
   noPrices: boolean;
-  eligibleChars: EligibleChar[];
+  eligibilityMap: Map<number, EligibleChar[]>;
   onAdd: (bp: BlueprintResult, runs: number) => void;
 }) {
   const maxRuns = bp.is_bpo ? 1 : bp.runs;
   const profitPerRun = bp.runs > 0 ? bp.profit / bp.runs : 0;
+  const eligible = eligibilityMap.get(bp.blueprint_type_id) ?? [];
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 bg-eve-bg/50 border border-eve-border/30
@@ -521,7 +522,7 @@ function BpCopyRow({
         </div>
       )}
       {noPrices && <div className="flex-1" />}
-      <CharacterMiniPortraits characters={eligibleChars} size={18} />
+      <CharacterMiniPortraits characters={eligible} size={18} />
       <div className="flex items-center gap-1 shrink-0 mr-2">
         <span className="text-[10px] text-eve-text font-bold">{maxRuns}</span>
         <span className="text-[8px] text-eve-muted uppercase">Run{maxRuns !== 1 ? "s" : ""}</span>
@@ -537,11 +538,11 @@ function BpCopyRow({
 }
 
 function BpVariantSection({
-  variant, noPrices, eligibleChars, onAdd,
+  variant, noPrices, eligibilityMap, onAdd,
 }: {
   variant: BpVariant;
   noPrices: boolean;
-  eligibleChars: EligibleChar[];
+  eligibilityMap: Map<number, EligibleChar[]>;
   onAdd: (bp: BlueprintResult, runs: number) => void;
 }) {
   const runsList = variant.copies.map(c => c.runs);
@@ -577,7 +578,7 @@ function BpVariantSection({
         {variant.copies.map((copy, i) => (
           <BpCopyRow
             key={copy.item_id ?? `${copy.me}-${copy.te}-${copy.runs}-${i}`}
-            bp={copy} noPrices={noPrices} eligibleChars={eligibleChars} onAdd={onAdd}
+            bp={copy} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd}
           />
         ))}
       </div>
@@ -586,12 +587,12 @@ function BpVariantSection({
 }
 
 function BpGroupRow({
-  group, expanded, noPrices, eligibleChars, onToggle, onAdd,
+  group, expanded, noPrices, eligibilityMap, onToggle, onAdd,
 }: {
   group: BpGroup;
   expanded: boolean;
   noPrices: boolean;
-  eligibleChars: EligibleChar[];
+  eligibilityMap: Map<number, EligibleChar[]>;
   onToggle: () => void;
   onAdd: (bp: BlueprintResult, runs: number) => void;
 }) {
@@ -616,7 +617,7 @@ function BpGroupRow({
             </span>
           )}
         </div>
-        <BpVariantSection variant={group.variants[0]} noPrices={noPrices} eligibleChars={eligibleChars} onAdd={onAdd} />
+        <BpVariantSection variant={group.variants[0]} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd} />
       </div>
     );
   }
@@ -653,7 +654,7 @@ function BpGroupRow({
           {group.variants.map((variant) => (
             <BpVariantSection
               key={`${variant.me}-${variant.te}-${String(variant.is_bpo)}`}
-              variant={variant} noPrices={noPrices} eligibleChars={eligibleChars} onAdd={onAdd}
+              variant={variant} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd}
             />
           ))}
         </div>
@@ -677,7 +678,12 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
   const [copied, setCopied]         = useState(false);
   const [search, setSearch]         = useState("");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const buildEligible = useEligibleCharacters("build");
+  // Include queued blueprints so portraits remain visible after a BP is moved to the queue
+  const allBps = useMemo(
+    () => [...blueprints, ...queue.map(q => q.bp)],
+    [blueprints, queue],
+  );
+  const eligibilityMap = useEligibilityMap(allBps);
 
   // Holds the settings used to load BPs (so we can save plan items with correct me/te/runs)
   const simSettingsRef = useRef<Settings>(DEFAULT_SETTINGS);
@@ -956,7 +962,7 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
                     group={group}
                     expanded={expandedGroups.has(group.name)}
                     noPrices={noPrices}
-                    eligibleChars={buildEligible}
+                    eligibilityMap={eligibilityMap}
                     onToggle={() => toggleGroup(group.name)}
                     onAdd={addToQueue}
                   />
@@ -1025,7 +1031,7 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
                                                  : "text-blue-400 bg-blue-400/10"}`}>
                                 {item.bp.is_bpo ? "BPO" : "BPC"}
                               </span>
-                              <CharacterMiniPortraits characters={buildEligible} size={18} />
+                              <CharacterMiniPortraits characters={eligibilityMap.get(item.bp.blueprint_type_id) ?? []} size={18} />
                             </div>
                             <div className="text-[9px] text-eve-muted">{item.bp.product_name}</div>
                           </div>

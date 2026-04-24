@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import type { BlueprintResult, SortKey } from "../types";
-import { useCharacterSkillData, getEligibleForBp } from "../hooks/useEligibleCharacters";
+import { useEligibilityMap } from "../hooks/useEligibleCharacters";
 import { CharacterMiniPortraits } from "./CharacterMiniPortraits";
 
 interface Props {
@@ -27,7 +27,7 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
   const [sortKey, setSortKey]     = useState<SortKey>("profit");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const eligibleChars = useEligibleCharacters(activity ?? "");
+  const eligibilityMap = useEligibilityMap(activity ? blueprints : []);
   const colCount = activity ? 7 : 6;
 
   // Category Filtering
@@ -41,7 +41,7 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
   const [deselectedCategories, setDeselectedCategories] = useState<string[]>([]);
 
   const handleToggleCategory = (cat: string) => {
-    setDeselectedCategories(prev => 
+    setDeselectedCategories(prev =>
       prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
     );
   };
@@ -100,7 +100,7 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
             </button>
           ))}
           {deselectedCategories.length > 0 && (
-            <button 
+            <button
               onClick={() => setDeselectedCategories([])}
               className="px-3 py-1 text-[10px] font-bold uppercase text-red-400 hover:text-red-300 transition-colors"
             >
@@ -136,6 +136,7 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
               const rowId = `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.decryptor_name || ""}`;
               const isExpanded = expandedId === rowId;
               const cleanBpName = bp.blueprint_name.replace(" (Potential)", "");
+              const eligible = activity ? (eligibilityMap.get(bp.blueprint_type_id) ?? []) : [];
 
               return (
                 <React.Fragment key={rowId}>
@@ -171,7 +172,7 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
                     </td>
                     {activity && (
                       <td className="px-3 py-3">
-                        <CharacterMiniPortraits characters={eligibleChars} size={22} />
+                        <CharacterMiniPortraits characters={eligible} size={22} />
                       </td>
                     )}
                     <td className="px-2 py-3 text-right">

@@ -268,6 +268,11 @@ def _calc_profits_for_bps(
                 if bp.get("item_id"):
                     d["item_id"] = bp["item_id"]
                 results.append(d)
+        # Attach per-blueprint skill requirements for individual mode (always build, activityID=1)
+        type_ids = list({r["blueprint_type_id"] for r in results})
+        skills_map = get_blueprint_required_skills_batch(type_ids, 1)
+        for r in results:
+            r["required_skills"] = skills_map.get(r["blueprint_type_id"], [])
         return results
 
     # Aggregate identical blueprints (same type, ME, TE, etc.)

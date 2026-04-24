@@ -229,6 +229,28 @@ function PlanDetail({ plan, onClose }: { plan: Plan; onClose: () => void }) {
     loadItems(); setStats(null); setShopping(null);
   };
 
+  const handleMiniSuggest = async (strategy: string) => {
+    try {
+      const res = await fetchSuggestedPlan(strategy);
+      if (res.suggested_items.length === 0) {
+        alert("No suitable blueprints found for open slots.");
+        return;
+      }
+      for (const item of res.suggested_items) {
+        await addPlanItem(plan.id, {
+          blueprint_type_id: item.blueprint_type_id,
+          blueprint_name:    item.blueprint_name,
+          product_type_id:   item.product_type_id,
+          product_name:      item.product_name,
+          runs: item.runs, me: item.me, te: item.te,
+        });
+      }
+      loadItems(); setStats(null); setShopping(null);
+    } catch (e: any) {
+      alert(e.message || "Suggestion failed");
+    }
+  };
+
   const copyMultibuy = () => {
     if (!shopping?.multibuy) return;
     navigator.clipboard.writeText(shopping.multibuy).then(() => {
@@ -901,10 +923,10 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
 
       {/* Main grid */}
       {!loadError && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ minHeight: "62vh" }}>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 h-[calc(100vh-280px)] min-h-[500px]">
 
           {/* LEFT: Owned Blueprint Panel */}
-          <div className="bg-eve-surface border border-eve-border rounded-lg flex flex-col overflow-hidden">
+          <div className="lg:col-span-3 bg-eve-surface border border-eve-border rounded-lg flex flex-col overflow-hidden">
             <div className="p-3 border-b border-eve-border bg-eve-bg/50 flex items-center gap-3">
               <div className="text-[10px] uppercase font-bold text-eve-muted tracking-widest shrink-0">
                 Owned Blueprints
@@ -922,7 +944,7 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
               />
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+            <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
               {groups.length === 0 ? (
                 <div className="py-12 text-center text-eve-muted text-xs italic">
                   {blueprints.length === 0 ? "No blueprints loaded." : "No blueprints match the filter."}
@@ -943,11 +965,11 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* RIGHT: Queue + Materials */}
-          <div className="flex flex-col gap-4">
+          <div className="lg:col-span-2 flex flex-col gap-4 overflow-hidden">
 
             {/* Build Queue */}
-            <div className="bg-eve-surface border border-eve-border rounded-lg flex flex-col overflow-hidden"
-                 style={{ minHeight: "260px", flex: "1 1 0" }}>
+            <div className="bg-eve-surface border border-eve-border rounded-lg flex flex-col overflow-hidden shadow-sm"
+                 style={{ flex: "0 1 auto", maxHeight: "50%" }}>
               <div className="p-3 border-b border-eve-border bg-eve-bg/50 flex justify-between items-center">
                 <span className="text-[10px] uppercase font-bold text-eve-muted tracking-widest">
                   Build Queue — {queue.length} {queue.length === 1 ? "job" : "jobs"}
@@ -963,11 +985,11 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
                 )}
               </div>
 
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
                 {queue.length === 0 ? (
-                  <div className="h-full flex items-center justify-center">
-                    <span className="text-eve-muted/40 text-xs uppercase tracking-widest italic">
-                      Select blueprints from the left to queue jobs
+                  <div className="h-full min-h-[100px] flex items-center justify-center">
+                    <span className="text-eve-muted/40 text-[10px] uppercase tracking-widest italic">
+                      Select blueprints from the left
                     </span>
                   </div>
                 ) : (
@@ -1052,8 +1074,8 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
             </div>
 
             {/* Materials Panel */}
-            <div className="bg-eve-surface border border-eve-border rounded-lg flex flex-col overflow-hidden"
-                 style={{ minHeight: "260px", flex: "1 1 0" }}>
+            <div className="bg-eve-surface border border-eve-border rounded-lg flex flex-col overflow-hidden shadow-sm"
+                 style={{ flex: "1 1 0" }}>
               <div className="p-3 border-b border-eve-border bg-eve-bg/50 flex items-center justify-between">
                 <span className="text-[10px] uppercase font-bold text-eve-muted tracking-widest">
                   Materials — {aggregatedMats.length} types
@@ -1066,11 +1088,11 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
                 </label>
               </div>
 
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
                 {aggregatedMats.length === 0 ? (
-                  <div className="h-full flex items-center justify-center">
-                    <span className="text-eve-muted/40 text-xs uppercase tracking-widest italic">
-                      Queue jobs to see material requirements
+                  <div className="h-full min-h-[100px] flex items-center justify-center">
+                    <span className="text-eve-muted/40 text-[10px] uppercase tracking-widest italic">
+                      Queue jobs to see materials
                     </span>
                   </div>
                 ) : (

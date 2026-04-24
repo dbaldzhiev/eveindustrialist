@@ -38,4 +38,5 @@ eve_industry.db
 # Gemini / AI tools
 .claude/
 .gemini/
-ref/
+ref
+frontend/node_modules

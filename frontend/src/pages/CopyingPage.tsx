@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
+import CharacterSkillBadges from "../components/CharacterSkillBadges";
 import { fetchBlueprints, fetchAppSettings } from "../api/client";
 import { DEFAULT_SETTINGS, StatCard, Spinner } from "./DashboardPage";
 import type { BlueprintResult, Character, Settings } from "../types";
@@ -82,7 +83,11 @@ export default function CopyingPage({ character }: Props) {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-1 items-center">
+          <div className="ml-auto">
+            <CharacterSkillBadges activity="copy" />
+          </div>
+
+          <div className="flex flex-wrap gap-1 items-center w-full border-t border-eve-border/40 pt-2">
             <span className="text-eve-muted font-bold uppercase text-[9px] mr-2">Categories:</span>
             {categories.map(cat => (
               <button

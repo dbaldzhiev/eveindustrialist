@@ -303,8 +303,6 @@ _SETTINGS_DEFAULTS = {
     "structure_me_bonus":     0.0,
     "structure_te_bonus":     0.0,
     "structure_cost_bonus":   0.0,
-    "industry_level":         0,
-    "adv_industry_level":     0,
     "runs":                   1,
     "min_profit":             0.0,
     "material_order_type":    "sell",
@@ -343,11 +341,10 @@ def upsert_user_settings(primary_character_id: int, **kwargs) -> dict:
                 (primary_character_id, default_structure_id, default_system_id,
                  default_price_region, broker_fee, sales_tax, facility_tax,
                  structure_me_bonus, structure_te_bonus, structure_cost_bonus,
-                 industry_level, adv_industry_level,
                  runs, min_profit, material_order_type, product_order_type,
                  warehouse_character_id, warehouse_location_id, warehouse_location_name,
                  reaction_facility_tax, reaction_me_bonus, reaction_te_bonus, reaction_cost_bonus)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 primary_character_id,
@@ -360,8 +357,6 @@ def upsert_user_settings(primary_character_id: int, **kwargs) -> dict:
                 current["structure_me_bonus"],
                 current["structure_te_bonus"],
                 current["structure_cost_bonus"],
-                current["industry_level"],
-                current["adv_industry_level"],
                 current["runs"],
                 current["min_profit"],
                 current["material_order_type"],

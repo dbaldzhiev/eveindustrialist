@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
 import BlueprintTable from "../components/BlueprintTable";
+import CharacterSkillBadges from "../components/CharacterSkillBadges";
 import { fetchBlueprints, fetchAppSettings } from "../api/client";
 import { useRefresh } from "../context/RefreshContext";
 import type { BlueprintResult, Character, Settings } from "../types";
@@ -20,8 +21,6 @@ export const DEFAULT_SETTINGS: Settings = {
   structure_cost_bonus: 0,
   assumed_me:           10,
   assumed_te:           20,
-  industry_level:       0,
-  adv_industry_level:   0,
   reaction_facility_tax: 0,
   reaction_me_bonus:     0,
   reaction_te_bonus:     0,
@@ -68,8 +67,6 @@ export default function DashboardPage({ character }: Props) {
           structure_me_bonus:   appSettings.structure_me_bonus ?? 0,
           structure_te_bonus:   appSettings.structure_te_bonus ?? 0,
           structure_cost_bonus: appSettings.structure_cost_bonus ?? 0,
-          industry_level:       appSettings.industry_level ?? 0,
-          adv_industry_level:   appSettings.adv_industry_level ?? 0,
           runs:                 appSettings.runs ?? 1,
           min_profit:           appSettings.min_profit ?? 0,
           material_order_type:  appSettings.material_order_type ?? "sell",
@@ -154,8 +151,8 @@ export default function DashboardPage({ character }: Props) {
               </div>
 
             </div>
-            <div className="text-[10px] uppercase tracking-wider hidden xl:block">
-              Calculated using global facility settings
+            <div className="flex items-center gap-4">
+              <CharacterSkillBadges activity="build" />
             </div>
           </div>
         )}

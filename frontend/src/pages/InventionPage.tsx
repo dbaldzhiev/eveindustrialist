@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
 import BlueprintTable from "../components/BlueprintTable";
+import CharacterSkillBadges from "../components/CharacterSkillBadges";
 import { fetchBlueprints, fetchAppSettings, fetchDecryptors } from "../api/client";
 import type { Decryptor } from "../api/client";
 import { StatCard, Spinner, fmtISK } from "./DashboardPage";
+import { useRefresh } from "../context/RefreshContext";
 import type { BlueprintResult, Character, Settings } from "../types";
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -21,8 +23,6 @@ export const DEFAULT_SETTINGS: Settings = {
   structure_cost_bonus: 0,
   assumed_me:           10,
   assumed_te:           20,
-  industry_level:       0,
-  adv_industry_level:   0,
   reaction_facility_tax: 0,
   reaction_me_bonus:     0,
   reaction_te_bonus:     0,
@@ -40,6 +40,7 @@ export default function InventionPage({ character }: Props) {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
   const [hasLoaded, setHasLoaded]   = useState(false);
+  const { pricesKey } = useRefresh();
 
   // Decryptor strategy
   const [strategy, setStrategy] = useState<string>("none"); // "none", "optimized", "specific"
@@ -76,8 +77,6 @@ export default function InventionPage({ character }: Props) {
           structure_me_bonus:   appSettings.structure_me_bonus ?? 0,
           structure_te_bonus:   appSettings.structure_te_bonus ?? 0,
           structure_cost_bonus: appSettings.structure_cost_bonus ?? 0,
-          industry_level:       appSettings.industry_level ?? 0,
-          adv_industry_level:   appSettings.adv_industry_level ?? 0,
           runs:                 appSettings.runs ?? 1,
           min_profit:           appSettings.min_profit ?? 0,
           material_order_type:  appSettings.material_order_type ?? "sell",
@@ -107,19 +106,8 @@ export default function InventionPage({ character }: Props) {
       }
     }
     init();
-  }, [strategy, selectedDecryptorId]); // Re-fetch when strategy changes
-
-  const handleRefresh = async () => {
-    setLoading(true);
-    try {
-      const results = await fetchBlueprints({ ...settings, min_profit: -1e15 }, true, "invent");
-      setBlueprints(results);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to refresh prices");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strategy, selectedDecryptorId, pricesKey]);
 
   const profitable = blueprints.filter((b) => b.profit > 0).length;
 
@@ -195,16 +183,8 @@ export default function InventionPage({ character }: Props) {
                 </div>
               </div>
 
-              <button
-                onClick={handleRefresh}
-                className="text-eve-orange hover:text-eve-orange/80 font-semibold uppercase tracking-tighter transition-colors"
-              >
-                Refresh Prices
-              </button>
             </div>
-            <div className="text-[10px] uppercase tracking-wider hidden xl:block">
-              Calculated using global facility settings
-            </div>
+            <CharacterSkillBadges activity="invent" />
           </div>
         )}
 

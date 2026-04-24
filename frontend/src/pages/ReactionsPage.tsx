@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
 import BlueprintTable from "../components/BlueprintTable";
+import CharacterSkillBadges from "../components/CharacterSkillBadges";
 import { fetchReactions, fetchAppSettings } from "../api/client";
 import { DEFAULT_SETTINGS, StatCard, Spinner, fmtISK } from "./DashboardPage";
+import { useRefresh } from "../context/RefreshContext";
 import type { BlueprintResult, Character, Settings } from "../types";
 
 interface Props {
@@ -29,6 +31,7 @@ export default function ReactionsPage({ character }: Props) {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
   const [hasLoaded, setHasLoaded]   = useState(false);
+  const { pricesKey } = useRefresh();
 
   // Quick filters
   const [showProfitable, setShowProfitable]     = useState(true);
@@ -55,8 +58,6 @@ export default function ReactionsPage({ character }: Props) {
           structure_me_bonus:   appSettings.structure_me_bonus ?? 0,
           structure_te_bonus:   appSettings.structure_te_bonus ?? 0,
           structure_cost_bonus: appSettings.structure_cost_bonus ?? 0,
-          industry_level:       appSettings.industry_level ?? 0,
-          adv_industry_level:   appSettings.adv_industry_level ?? 0,
           runs:                 appSettings.runs ?? 1,
           min_profit:           appSettings.min_profit ?? 0,
           material_order_type:  appSettings.material_order_type ?? "sell",
@@ -82,20 +83,10 @@ export default function ReactionsPage({ character }: Props) {
         setLoading(false);
       }
     }
-    init();
-  }, []);
-
-  const handleRefresh = async () => {
     setLoading(true);
-    try {
-      const results = await fetchReactions({ ...settings, min_profit: -1e15 }, true);
-      setReactions(results);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to refresh prices");
-    } finally {
-      setLoading(false);
-    }
-  };
+    init();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pricesKey]);
 
   const handleRunsChange = (val: number) => {
     const s = { ...settings, runs: val };
@@ -143,16 +134,8 @@ export default function ReactionsPage({ character }: Props) {
                 </div>
               </div>
 
-              <button
-                onClick={handleRefresh}
-                className="text-purple-400 hover:text-purple-300 font-semibold uppercase tracking-tighter transition-colors"
-              >
-                Refresh Prices
-              </button>
             </div>
-            <div className="text-[10px] uppercase tracking-wider text-purple-400/80">
-              Calculating profits for owned reaction formulas
-            </div>
+            <CharacterSkillBadges activity="react" />
           </div>
         )}
 

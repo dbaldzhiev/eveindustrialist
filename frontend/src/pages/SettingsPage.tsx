@@ -61,8 +61,6 @@ const DEFAULTS: AppSettings = {
   structure_me_bonus:      0.0,
   structure_te_bonus:      0.0,
   structure_cost_bonus:    0.0,
-  industry_level:          0,
-  adv_industry_level:      0,
   runs:                    1,
   min_profit:              0.0,
   material_order_type:     "sell",
@@ -258,22 +256,6 @@ export default function SettingsPage({ character }: Props) {
                                text-sm text-eve-text focus:outline-none focus:border-eve-orange"
                   />
                 </Field>
-              </div>
-            </section>
-
-            {/* Character Skills */}
-            <section className="bg-eve-surface border border-eve-border rounded-lg p-4 space-y-4">
-              <h2 className="text-xs font-semibold uppercase tracking-widest text-eve-muted">
-                Character Skills
-              </h2>
-              <div className="grid grid-cols-2 gap-4">
-                <NumField label="Industry level (0–5)" value={settings.industry_level}
-                  onChange={(v) => set("industry_level", Math.min(5, Math.max(0, v)))} min={0} max={5} />
-                <NumField label="Advanced Industry level (0–5)" value={settings.adv_industry_level}
-                  onChange={(v) => set("adv_industry_level", Math.min(5, Math.max(0, v)))} min={0} max={5} />
-              </div>
-              <div className="text-xs text-eve-muted/60">
-                Industry: −4% manufacturing time per level · Advanced Industry: −3% per level
               </div>
             </section>
 

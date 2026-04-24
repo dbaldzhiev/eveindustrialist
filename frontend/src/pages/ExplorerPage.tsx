@@ -33,8 +33,6 @@ export default function ExplorerPage({ character }: Props) {
           structure_me_bonus:   appSettings.structure_me_bonus,
           structure_te_bonus:   appSettings.structure_te_bonus,
           structure_cost_bonus: appSettings.structure_cost_bonus,
-          industry_level:       appSettings.industry_level,
-          adv_industry_level:   appSettings.adv_industry_level,
           runs:                 appSettings.runs,
           min_profit:           appSettings.min_profit,
           material_order_type:  appSettings.material_order_type,

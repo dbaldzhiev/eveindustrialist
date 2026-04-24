@@ -85,8 +85,6 @@ export interface Settings {
   structure_cost_bonus: number;
   assumed_me:           number;
   assumed_te:           number;
-  industry_level:       number;
-  adv_industry_level:   number;
   reaction_facility_tax: number;
   reaction_me_bonus:     number;
   reaction_te_bonus:     number;
@@ -209,8 +207,6 @@ export interface AppSettings {
   structure_me_bonus:      number;
   structure_te_bonus:      number;
   structure_cost_bonus:    number;
-  industry_level:          number;
-  adv_industry_level:      number;
   runs:                    number;
   min_profit:              number;
   material_order_type:     "sell" | "buy";

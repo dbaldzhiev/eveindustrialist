@@ -32,7 +32,8 @@ INDUSTRY_SKILL_IDS = {
     "adv_mass_production": 24625,  # +1 mfg slot per level
     "lab_operation":       3406,   # +1 research slot per level
     "adv_lab_operation":   24624,  # +1 research slot per level
-    "mass_reactions":      45748,  # +1 reaction slot per level (approx – verify in SDE)
+    "mass_reactions":      45748,  # +1 reaction slot per level
+    "science":             3402,   # required for copy/invent
 }
 
 

@@ -413,8 +413,6 @@ class UserSettingsIn(BaseModel):
     structure_me_bonus:      float        = 0.0
     structure_te_bonus:      float        = 0.0
     structure_cost_bonus:    float        = 0.0
-    industry_level:          int          = 0
-    adv_industry_level:      int          = 0
     runs:                    int          = 1
     min_profit:              float        = 0.0
     material_order_type:     str          = "sell"
@@ -446,8 +444,6 @@ def put_settings(body: UserSettingsIn, session: str | None = Cookie(None)):
         structure_me_bonus=body.structure_me_bonus,
         structure_te_bonus=body.structure_te_bonus,
         structure_cost_bonus=body.structure_cost_bonus,
-        industry_level=body.industry_level,
-        adv_industry_level=body.adv_industry_level,
         runs=body.runs,
         min_profit=body.min_profit,
         material_order_type=body.material_order_type,
@@ -912,6 +908,30 @@ def slots_dashboard(session: str | None = Cookie(None)):
             ],
         })
 
+    return result
+
+
+@app.get("/api/characters/skills")
+def characters_skills(session: str | None = Cookie(None)):
+    """Return industry-relevant skill levels for all group characters."""
+    primary_id = _primary(session)
+    char_ids   = get_group_character_ids(primary_id)
+    chars      = get_group_characters(primary_id)
+    name_map   = {c["character_id"]: c["character_name"] for c in chars}
+
+    result = []
+    for cid in char_ids:
+        try:
+            token  = get_access_token(cid)
+            skills = get_character_skills(cid, token)
+            named  = {name: skills.get(sid, 0) for name, sid in INDUSTRY_SKILL_IDS.items()}
+        except Exception:
+            named  = {name: 0 for name in INDUSTRY_SKILL_IDS}
+        result.append({
+            "character_id":   cid,
+            "character_name": name_map.get(cid, f"Character {cid}"),
+            "skills": named,
+        })
     return result
 
 

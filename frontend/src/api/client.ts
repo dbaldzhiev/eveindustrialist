@@ -89,8 +89,6 @@ function bpParams(s: Settings) {
     material_order_type:  s.material_order_type,
     product_order_type:   s.product_order_type,
     min_profit:           s.min_profit,
-    industry_level:       s.industry_level,
-    adv_industry_level:   s.adv_industry_level,
     reaction_facility_tax: s.reaction_facility_tax,
     reaction_me_bonus:     s.reaction_me_bonus,
     reaction_te_bonus:     s.reaction_te_bonus,
@@ -199,8 +197,6 @@ export async function fetchBlueprintDetail(
       structure_cost_bonus: settings.structure_cost_bonus,
       material_order_type:  settings.material_order_type,
       product_order_type:   settings.product_order_type,
-      industry_level:       settings.industry_level,
-      adv_industry_level:   settings.adv_industry_level,
     },
   });
   return data;
@@ -349,6 +345,26 @@ export async function refreshMarketPrices(): Promise<void> {
 export interface CacheStatus {
   market_updated_at: number | null;
   esi_updated_at:    number | null;
+}
+
+export interface CharacterSkillData {
+  character_id:   number;
+  character_name: string;
+  skills: {
+    industry:            number;
+    adv_industry:        number;
+    mass_production:     number;
+    adv_mass_production: number;
+    lab_operation:       number;
+    adv_lab_operation:   number;
+    mass_reactions:      number;
+    science:             number;
+  };
+}
+
+export async function fetchCharacterSkills(): Promise<CharacterSkillData[]> {
+  const { data } = await api.get<CharacterSkillData[]>("/api/characters/skills");
+  return data;
 }
 
 export async function fetchCacheStatus(): Promise<CacheStatus> {

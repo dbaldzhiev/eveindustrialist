@@ -10,10 +10,10 @@ interface Props {
 
 const TABS = [
   { to: "/slots",     label: "Dashboard"    },
+  { to: "/explorer",  label: "Explorer"     },
   { to: "/dashboard", label: "To Build"     },
   { to: "/invention", label: "To Invent"    },
   { to: "/copying",   label: "To Copy"      },
-  { to: "/explorer",  label: "Explorer"     },
   { to: "/reactions", label: "To React"     },
   { to: "/warehouse", label: "Warehouse"    },
   { to: "/plans",     label: "Plans"        },

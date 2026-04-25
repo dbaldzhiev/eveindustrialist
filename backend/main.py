@@ -38,7 +38,7 @@ from esi import (
     ACTIVITY_NAMES, resolve_location_names,
 )
 from market import get_market_prices, get_market_history_stats
-from profitability import calculate_blueprint_profit, ProfitSettings, calc_qty_with_me
+from profitability import calculate_blueprint_profit, ProfitSettings, calc_qty_with_me_runs
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
@@ -568,6 +568,14 @@ def esi_refresh(session: str | None = Cookie(None)):
     return {"ok": True, "errors": errors}
 
 
+@app.post("/api/sde/refresh")
+def sde_refresh(session: str | None = Cookie(None)):
+    get_current_character(session)
+    import setup_sde as _sde
+    _sde.main()
+    return {"ok": True}
+
+
 @app.get("/api/market/decryptors")
 def market_decryptors():
     return DECRYPTORS
@@ -662,9 +670,9 @@ def blueprints(
     broker_fee:           float = Query(0.0368, ge=0, le=0.20),
     sales_tax:            float = Query(0.0360, ge=0, le=0.20),
     facility_tax:         float = Query(0.0,    ge=0, le=0.25),
-    structure_me_bonus:   float = Query(0.0,    ge=0, le=5),
-    structure_te_bonus:   float = Query(0.0,    ge=0, le=30),
-    structure_cost_bonus: float = Query(0.0,    ge=0, le=25),
+    structure_me_bonus:   float = Query(0.0,    ge=0, le=0.05),
+    structure_te_bonus:   float = Query(0.0,    ge=0, le=0.30),
+    structure_cost_bonus: float = Query(0.0,    ge=0, le=0.25),
     material_order_type:  str   = Query("sell"),
     product_order_type:   str   = Query("sell"),
     min_profit:           float = Query(0.0),
@@ -727,9 +735,9 @@ def blueprints_explore(
     broker_fee:           float = Query(0.0368, ge=0, le=0.20),
     sales_tax:            float = Query(0.0360, ge=0, le=0.20),
     facility_tax:         float = Query(0.0,    ge=0, le=0.25),
-    structure_me_bonus:   float = Query(0.0,    ge=0, le=5),
-    structure_te_bonus:   float = Query(0.0,    ge=0, le=30),
-    structure_cost_bonus: float = Query(0.0,    ge=0, le=25),
+    structure_me_bonus:   float = Query(0.0,    ge=0, le=0.05),
+    structure_te_bonus:   float = Query(0.0,    ge=0, le=0.30),
+    structure_cost_bonus: float = Query(0.0,    ge=0, le=0.25),
     material_order_type:  str   = Query("sell"),
     product_order_type:   str   = Query("sell"),
     min_profit:           float = Query(0.0),
@@ -807,9 +815,9 @@ def reactions_explore(
     broker_fee:           float = Query(0.0368, ge=0, le=0.20),
     sales_tax:            float = Query(0.0360, ge=0, le=0.20),
     facility_tax:         float = Query(0.0,    ge=0, le=0.25),
-    structure_me_bonus:   float = Query(0.0,    ge=0, le=5),
-    structure_te_bonus:   float = Query(0.0,    ge=0, le=30),
-    structure_cost_bonus: float = Query(0.0,    ge=0, le=25),
+    structure_me_bonus:   float = Query(0.0,    ge=0, le=0.05),
+    structure_te_bonus:   float = Query(0.0,    ge=0, le=0.30),
+    structure_cost_bonus: float = Query(0.0,    ge=0, le=0.25),
     material_order_type:  str   = Query("sell"),
     product_order_type:   str   = Query("sell"),
     min_profit:           float = Query(0.0),
@@ -1013,9 +1021,9 @@ def slot_suggestions(
     broker_fee:           float = Query(0.0368, ge=0, le=0.20),
     sales_tax:            float = Query(0.0360, ge=0, le=0.20),
     facility_tax:         float = Query(0.0,    ge=0, le=0.25),
-    structure_me_bonus:   float = Query(0.0,    ge=0, le=5),
-    structure_te_bonus:   float = Query(0.0,    ge=0, le=30),
-    structure_cost_bonus: float = Query(0.0,    ge=0, le=25),
+    structure_me_bonus:   float = Query(0.0,    ge=0, le=0.05),
+    structure_te_bonus:   float = Query(0.0,    ge=0, le=0.30),
+    structure_cost_bonus: float = Query(0.0,    ge=0, le=0.25),
     material_order_type:  str   = Query("sell"),
     product_order_type:   str   = Query("sell"),
     limit:                int   = Query(10,    ge=1, le=50),
@@ -1471,7 +1479,7 @@ def plan_summary(
     for item in items:
         data = sde_data.get(item["blueprint_type_id"], {})
         for mat in data.get("materials", []):
-            qty = calc_qty_with_me(mat["quantity"], item["me"], structure_me_bonus) * item["runs"]
+            qty = calc_qty_with_me_runs(mat["quantity"], item["me"], item["runs"], structure_me_bonus)
             if mat["type_id"] not in needed:
                 needed[mat["type_id"]] = {"name": mat["name"], "qty": 0}
             needed[mat["type_id"]]["qty"] += qty
@@ -1694,7 +1702,7 @@ def plan_shopping_list(
     for item in items:
         data = sde_data.get(item["blueprint_type_id"], {})
         for mat in data.get("materials", []):
-            qty = calc_qty_with_me(mat["quantity"], item["me"], structure_me_bonus) * item["runs"]
+            qty = calc_qty_with_me_runs(mat["quantity"], item["me"], item["runs"], structure_me_bonus)
             if mat["type_id"] not in needed:
                 needed[mat["type_id"]] = {"name": mat["name"], "qty": 0}
             needed[mat["type_id"]]["qty"] += qty

@@ -842,7 +842,7 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
 
       bp.materials.forEach(m => {
         if (!matMap[m.type_id]) matMap[m.type_id] = { name: m.name, needed: 0, unit_price: m.unit_price };
-        matMap[m.type_id].needed += m.quantity * chosen_runs;
+        matMap[m.type_id].needed += Math.ceil(m.quantity * scale);
       });
     });
 

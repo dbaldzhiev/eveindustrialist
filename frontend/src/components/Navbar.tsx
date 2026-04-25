@@ -36,9 +36,9 @@ export default function Navbar({ character }: Props) {
   const [, setTick] = useState(0);
 
   const {
-    pricesAt, esiAt,
-    refreshingPrices, refreshingEsi,
-    doRefreshPrices, doRefreshEsi,
+    pricesAt, esiAt, sdeAt,
+    refreshingPrices, refreshingEsi, refreshingSde,
+    doRefreshPrices, doRefreshEsi, doRefreshSde,
   } = useRefresh();
 
   useEffect(() => {
@@ -199,6 +199,27 @@ export default function Navbar({ character }: Props) {
             </button>
             <span className="text-xs text-eve-muted/50">
               {refreshingEsi ? "" : timeAgo(esiAt)}
+            </span>
+          </div>
+
+          <div className="w-px h-4 bg-eve-border/40" />
+
+          {/* SDE */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={doRefreshSde}
+              disabled={refreshingSde}
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded
+                         border border-eve-border/60 text-xs text-eve-muted
+                         hover:border-eve-orange/50 hover:text-eve-orange
+                         disabled:opacity-40 disabled:cursor-not-allowed
+                         transition-colors"
+            >
+              <span className={refreshingSde ? "animate-spin" : ""}>↻</span>
+              {refreshingSde ? "Importing…" : "Refresh SDE"}
+            </button>
+            <span className="text-xs text-eve-muted/50">
+              {refreshingSde ? "" : timeAgo(sdeAt)}
             </span>
           </div>
         </div>

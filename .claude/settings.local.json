@@ -24,7 +24,8 @@
       "Bash(python -c \"import market; import main; print\\('OK'\\)\")",
       "Bash(python -m py_compile market.py)",
       "Bash(python -m py_compile esi.py)",
-      "Bash(python -m py_compile database.py)"
+      "Bash(python -m py_compile database.py)",
+      "Bash(xargs grep *)"
     ]
   }
 }

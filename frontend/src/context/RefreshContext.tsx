@@ -1,31 +1,38 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { fetchCacheStatus, refreshMarketPrices, refreshEsi } from "../api/client";
+import { fetchCacheStatus, refreshMarketPrices, refreshEsi, refreshSde } from "../api/client";
 
 interface RefreshContextValue {
   pricesKey:        number;
   esiKey:           number;
+  sdeKey:           number;
   pricesAt:         number | null;
   esiAt:            number | null;
+  sdeAt:            number | null;
   refreshingPrices: boolean;
   refreshingEsi:    boolean;
+  refreshingSde:    boolean;
   doRefreshPrices:  () => Promise<void>;
   doRefreshEsi:     () => Promise<void>;
+  doRefreshSde:     () => Promise<void>;
 }
 
 const RefreshContext = createContext<RefreshContextValue>({
-  pricesKey: 0, esiKey: 0,
-  pricesAt: null, esiAt: null,
-  refreshingPrices: false, refreshingEsi: false,
-  doRefreshPrices: async () => {}, doRefreshEsi: async () => {},
+  pricesKey: 0, esiKey: 0, sdeKey: 0,
+  pricesAt: null, esiAt: null, sdeAt: null,
+  refreshingPrices: false, refreshingEsi: false, refreshingSde: false,
+  doRefreshPrices: async () => {}, doRefreshEsi: async () => {}, doRefreshSde: async () => {},
 });
 
 export function RefreshProvider({ children }: { children: React.ReactNode }) {
   const [pricesKey,        setPricesKey]        = useState(0);
   const [esiKey,           setEsiKey]           = useState(0);
+  const [sdeKey,           setSdeKey]           = useState(0);
   const [pricesAt,         setPricesAt]         = useState<number | null>(null);
   const [esiAt,            setEsiAt]            = useState<number | null>(null);
+  const [sdeAt,            setSdeAt]            = useState<number | null>(null);
   const [refreshingPrices, setRefreshingPrices] = useState(false);
   const [refreshingEsi,    setRefreshingEsi]    = useState(false);
+  const [refreshingSde,    setRefreshingSde]    = useState(false);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -68,11 +75,25 @@ export function RefreshProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const doRefreshSde = async () => {
+    setRefreshingSde(true);
+    try {
+      await refreshSde();
+      const now = Date.now();
+      if (mounted.current) {
+        setSdeAt(now);
+        setSdeKey((k) => k + 1);
+      }
+    } finally {
+      if (mounted.current) setRefreshingSde(false);
+    }
+  };
+
   return (
     <RefreshContext.Provider value={{
-      pricesKey, esiKey, pricesAt, esiAt,
-      refreshingPrices, refreshingEsi,
-      doRefreshPrices, doRefreshEsi,
+      pricesKey, esiKey, sdeKey, pricesAt, esiAt, sdeAt,
+      refreshingPrices, refreshingEsi, refreshingSde,
+      doRefreshPrices, doRefreshEsi, doRefreshSde,
     }}>
       {children}
     </RefreshContext.Provider>

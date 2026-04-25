@@ -376,3 +376,7 @@ export async function fetchCacheStatus(): Promise<CacheStatus> {
 export async function refreshEsi(): Promise<void> {
   await api.post("/api/esi/refresh");
 }
+
+export async function refreshSde(): Promise<void> {
+  await api.post("/api/sde/refresh");
+}

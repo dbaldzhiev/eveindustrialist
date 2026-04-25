@@ -8,9 +8,9 @@ class ProfitSettings:
     sales_tax:            float = 0.036
     facility_tax:         float = 0.0
     runs:                 int   = 1
-    structure_me_bonus:   float = 0.0   # % additional ME reduction (e.g. 1.0 = 1%)
-    structure_te_bonus:   float = 0.0   # % additional TE reduction (e.g. 15.0 = 15%)
-    structure_cost_bonus: float = 0.0   # % job cost reduction from structure
+    structure_me_bonus:   float = 0.0   # fraction (e.g. 0.01 = 1% ME reduction)
+    structure_te_bonus:   float = 0.0   # fraction (e.g. 0.15 = 15% TE reduction)
+    structure_cost_bonus: float = 0.0   # fraction (e.g. 0.03 = 3% job cost reduction)
     material_order_type:  str   = "sell"
     product_order_type:   str   = "sell"
     # Industry skills (applied to manufacturing time only)
@@ -84,12 +84,24 @@ class BlueprintProfit:
 
 def calc_qty_with_me(base_qty: int, me: int, structure_me_bonus: float = 0.0) -> int:
     """
-    Apply blueprint ME (0–10%) and optional structure ME bonus.
-    Both are percentages: me=10 → 10% reduction, structure_me_bonus=1.0 → 1%.
+    Per-run ME reduction (used for single-run profitability display).
+    me is blueprint ME level (0-10 integer, gives me% reduction).
+    structure_me_bonus is a fraction (e.g. 0.01 = 1%).
     """
     return max(1, math.ceil(
-        base_qty * (1.0 - me / 100.0) * (1.0 - structure_me_bonus / 100.0)
+        base_qty * (1.0 - me / 100.0) * (1.0 - structure_me_bonus)
     ))
+
+
+def calc_qty_with_me_runs(base_qty: int, me: int, runs: int, structure_me_bonus: float = 0.0) -> int:
+    """
+    EVE's actual job formula: ceil applied to the full job quantity (base × runs × ME_mod),
+    not per-run. This avoids overcounting from repeated ceiling rounding.
+    Minimum is `runs` (1 unit per run even at very high ME).
+    structure_me_bonus is a fraction (e.g. 0.01 = 1%).
+    """
+    me_modifier = (1.0 - me / 100.0) * (1.0 - structure_me_bonus)
+    return max(runs, math.ceil(base_qty * me_modifier * runs))
 
 
 def calculate_blueprint_profit(
@@ -119,7 +131,9 @@ def calculate_blueprint_profit(
     eiv = 0.0
 
     for mat in sde_materials:
-        qty       = calc_qty_with_me(mat["quantity"], me, settings.structure_me_bonus)
+        # Per-job ceiling: ceil(base × ME_mod × runs) — avoids over-counting from
+        # repeated rounding when the same formula is applied run-by-run.
+        qty       = calc_qty_with_me_runs(mat["quantity"], me, settings.runs, settings.structure_me_bonus)
         price     = market_prices.get(mat["type_id"], {}).get(settings.material_order_type, 0.0)
         adj_price = adjusted_prices.get(mat["type_id"], {}).get("adjusted_price", 0.0)
 
@@ -132,10 +146,7 @@ def calculate_blueprint_profit(
             quantity=qty, unit_price=price, total_cost=line_cost,
         ))
 
-    material_cost *= settings.runs
-    eiv           *= settings.runs
-
-    structure_discount = 1.0 - settings.structure_cost_bonus / 100.0
+    structure_discount = 1.0 - settings.structure_cost_bonus
     job_cost   = eiv * system_cost_index * structure_discount * (1.0 + settings.facility_tax)
     total_cost = material_cost + job_cost
 
@@ -153,7 +164,7 @@ def calculate_blueprint_profit(
     )
     te_factor    = (
         (1.0 - te / 100.0) *
-        (1.0 - settings.structure_te_bonus / 100.0) *
+        (1.0 - settings.structure_te_bonus) *
         skill_time_mult
     )
     total_hours  = (base_time_seconds * te_factor / 3600.0) * settings.runs

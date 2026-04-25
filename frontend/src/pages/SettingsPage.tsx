@@ -151,9 +151,12 @@ export default function SettingsPage({ character }: Props) {
               <div className="flex flex-wrap gap-x-3 gap-y-1 items-center text-[10px] text-eve-muted/60 border-t border-eve-border/30 pt-3">
                 <span className="uppercase font-bold tracking-tighter">Presets:</span>
                 {[
-                  { name: "Raitaru", me: 1.0, te: 15.0, cost: 3.0 },
-                  { name: "Azbel",   me: 2.0, te: 20.0, cost: 4.0 },
-                  { name: "Sotiyo",  me: 2.4, te: 20.0, cost: 5.0 },
+                  { name: "NPC Station",  me: 0.0, te: 0.0,  cost: 0.0 },
+                  { name: "Raitaru",      me: 1.0, te: 15.0, cost: 3.0 },
+                  { name: "Raitaru+rig",  me: 3.0, te: 15.0, cost: 3.0 },
+                  { name: "Azbel",        me: 1.0, te: 20.0, cost: 4.0 },
+                  { name: "Azbel+rig",    me: 2.0, te: 20.0, cost: 4.0 },
+                  { name: "Sotiyo",       me: 1.0, te: 20.0, cost: 5.0 },
                 ].map(p => (
                   <button key={p.name} onClick={() => {
                     set("structure_me_bonus", p.me / 100);
@@ -182,17 +185,20 @@ export default function SettingsPage({ character }: Props) {
                   onChange={(v) => set("reaction_facility_tax", v)} max={25} step="0.1" />
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 items-center text-[10px] text-eve-muted/60 border-t border-eve-border/30 pt-3">
-                <span className="uppercase font-bold tracking-tighter">Presets (With Rigs):</span>
+                <span className="uppercase font-bold tracking-tighter">Presets:</span>
                 {[
-                  { name: "Athanor", bonus: 2.0 },
-                  { name: "Tatara",  bonus: 2.4 },
+                  { name: "NPC Station", me: 0.0, te: 0.0,  cost: 0.0 },
+                  { name: "Athanor",     me: 1.0, te: 15.0, cost: 3.0 },
+                  { name: "Athanor+rig", me: 2.0, te: 15.0, cost: 3.0 },
+                  { name: "Tatara",      me: 1.0, te: 20.0, cost: 5.0 },
+                  { name: "Tatara+rig",  me: 2.4, te: 20.0, cost: 5.0 },
                 ].map(p => (
                   <button key={p.name} onClick={() => {
-                    set("reaction_me_bonus", p.bonus / 100);
-                    set("reaction_te_bonus", p.bonus / 100);
-                    set("reaction_cost_bonus", p.bonus / 100);
+                    set("reaction_me_bonus", p.me / 100);
+                    set("reaction_te_bonus", p.te / 100);
+                    set("reaction_cost_bonus", p.cost / 100);
                   }} className="hover:text-purple-400 transition-colors">
-                    {p.name} ({p.bonus}%)
+                    {p.name} ({p.me}/{p.te}/{p.cost}%)
                   </button>
                 ))}
               </div>

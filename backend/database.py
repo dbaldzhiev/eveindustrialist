@@ -47,6 +47,17 @@ def init_db():
         );
 
         -- Market caches
+        CREATE TABLE IF NOT EXISTS market_history_cache (
+            type_id    INTEGER NOT NULL,
+            region_id  INTEGER NOT NULL,
+            vol_1d     INTEGER NOT NULL DEFAULT 0,
+            vol_7d     INTEGER NOT NULL DEFAULT 0,
+            avg_daily  REAL    NOT NULL DEFAULT 0,
+            avg_price  REAL    NOT NULL DEFAULT 0,
+            trend      TEXT    NOT NULL DEFAULT 'flat',
+            fetched_at REAL    NOT NULL,
+            PRIMARY KEY (type_id, region_id)
+        );
         CREATE TABLE IF NOT EXISTS market_price_cache (
             type_id     INTEGER NOT NULL,
             region_id   INTEGER NOT NULL,
@@ -127,6 +138,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS jobs_cache (
             character_id      INTEGER NOT NULL,
             job_id            INTEGER NOT NULL,
+            blueprint_id      INTEGER,
             activity_id       INTEGER NOT NULL,
             blueprint_type_id INTEGER,
             product_type_id   INTEGER,
@@ -196,6 +208,7 @@ def _migrate(conn: sqlite3.Connection):
     _add_column_if_missing(conn, "user_settings", "reaction_me_bonus",     "REAL NOT NULL DEFAULT 0.0")
     _add_column_if_missing(conn, "user_settings", "reaction_te_bonus",     "REAL NOT NULL DEFAULT 0.0")
     _add_column_if_missing(conn, "user_settings", "reaction_cost_bonus",   "REAL NOT NULL DEFAULT 0.0")
+    _add_column_if_missing(conn, "jobs_cache",    "blueprint_id",          "INTEGER")
 
     # asset_cache: container + location metadata
     _add_column_if_missing(conn, "asset_cache", "is_container",  "INTEGER NOT NULL DEFAULT 0")
@@ -858,14 +871,14 @@ def store_jobs(character_id: int, jobs: list[dict]) -> None:
         conn.executemany(
             """
             INSERT INTO jobs_cache
-                (character_id, job_id, activity_id, blueprint_type_id, product_type_id,
-                 blueprint_name, product_name, status, runs, start_date, end_date,
-                 duration_seconds, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                (character_id, job_id, blueprint_id, activity_id, blueprint_type_id,
+                 product_type_id, blueprint_name, product_name, status, runs,
+                 start_date, end_date, duration_seconds, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             [
-                (character_id, j["job_id"], j["activity_id"],
-                 j.get("blueprint_type_id"), j.get("product_type_id"),
+                (character_id, j["job_id"], j.get("blueprint_id"),
+                 j["activity_id"], j.get("blueprint_type_id"), j.get("product_type_id"),
                  j.get("blueprint_name", ""), j.get("product_name", ""),
                  j["status"], j["runs"], j.get("start_date", ""),
                  j.get("end_date", ""), j.get("duration"), now)
@@ -873,6 +886,30 @@ def store_jobs(character_id: int, jobs: list[dict]) -> None:
             ],
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_active_job_blueprint_ids(char_ids: list[int]) -> set[int]:
+    """
+    Return the set of blueprint item_ids currently installed in active industry jobs.
+    These BPCs are physically in a job slot and cannot be queued again.
+    """
+    if not char_ids:
+        return set()
+    conn = get_db()
+    try:
+        ph   = ",".join("?" * len(char_ids))
+        rows = conn.execute(
+            f"""
+            SELECT blueprint_id FROM jobs_cache
+            WHERE  character_id IN ({ph})
+              AND  status IN ('active', 'ready', 'paused')
+              AND  blueprint_id IS NOT NULL
+            """,
+            char_ids,
+        ).fetchall()
+        return {row["blueprint_id"] for row in rows}
     finally:
         conn.close()
 

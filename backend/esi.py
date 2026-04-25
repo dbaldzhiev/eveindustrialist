@@ -249,6 +249,7 @@ def get_character_jobs(character_id: int, access_token: str,
     jobs = [
         {
             "job_id":             job["job_id"],
+            "blueprint_id":       job.get("blueprint_id"),   # item_id of the specific BPC instance
             "activity_id":        job["activity_id"],
             "activity_name":      ACTIVITY_NAMES.get(job["activity_id"], "Unknown"),
             "blueprint_type_id":  job.get("blueprint_type_id"),

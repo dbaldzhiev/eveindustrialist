@@ -23,6 +23,7 @@ from database import (
     get_plan_items, add_plan_item, update_plan_item, remove_plan_item,
     get_invention_variants, get_reaction_bp_ids,
     get_blueprint_required_skills_batch, get_cached_all_skills_for_characters,
+    get_active_job_blueprint_ids,
     _chunk,
 )
 from auth import (
@@ -36,7 +37,7 @@ from esi import (
     INDUSTRY_SKILL_IDS, MFG_ACTIVITIES, RESEARCH_ACTIVITIES, REACTION_ACTIVITIES,
     ACTIVITY_NAMES, resolve_location_names,
 )
-from market import get_market_prices
+from market import get_market_prices, get_market_history_stats
 from profitability import calculate_blueprint_profit, ProfitSettings, calc_qty_with_me
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
@@ -123,8 +124,15 @@ def _calc_profits_for_bps(
     include_materials: bool = True,
     individual: bool = False,
 ) -> list[dict]:
+    # Remove BPCs that are physically installed in an active industry job —
+    # they're consumed and can't be queued until the job delivers.
+    if primary_id:
+        in_use = get_active_job_blueprint_ids(get_group_character_ids(primary_id))
+        if in_use:
+            char_bps = [bp for bp in char_bps if bp.get("item_id") not in in_use]
+
     bp_type_ids = [bp["type_id"] for bp in char_bps]
-    
+
     invention_bps = []
     if mode == "invent":
         unique_ids = list(set(bp_type_ids))
@@ -269,10 +277,16 @@ def _calc_profits_for_bps(
                     d["item_id"] = bp["item_id"]
                 results.append(d)
         # Attach per-blueprint skill requirements for individual mode (always build, activityID=1)
-        type_ids = list({r["blueprint_type_id"] for r in results})
-        skills_map = get_blueprint_required_skills_batch(type_ids, 1)
+        bp_type_ids = list({r["blueprint_type_id"] for r in results})
+        skills_map  = get_blueprint_required_skills_batch(bp_type_ids, 1)
         for r in results:
             r["required_skills"] = skills_map.get(r["blueprint_type_id"], [])
+        # Attach market history stats
+        product_ids  = list({r["product_type_id"] for r in results})
+        history_map  = get_market_history_stats(product_ids, price_region_id)
+        _empty_stats = {"vol_1d": 0, "vol_7d": 0, "avg_daily": 0.0, "avg_price": 0.0, "trend": "flat"}
+        for r in results:
+            r["market_stats"] = history_map.get(r["product_type_id"], _empty_stats)
         return results
 
     # Aggregate identical blueprints (same type, ME, TE, etc.)
@@ -381,6 +395,13 @@ def _calc_profits_for_bps(
         skills_map = get_blueprint_required_skills_batch(type_ids, activity_id)
         for r in results:
             r["required_skills"] = skills_map.get(r["blueprint_type_id"], [])
+
+    # Attach market history stats (volume + price trend) per product
+    product_ids  = list({r["product_type_id"] for r in results})
+    history_map  = get_market_history_stats(product_ids, price_region_id)
+    _empty_stats = {"vol_1d": 0, "vol_7d": 0, "avg_daily": 0.0, "avg_price": 0.0, "trend": "flat"}
+    for r in results:
+        r["market_stats"] = history_map.get(r["product_type_id"], _empty_stats)
 
     results.sort(key=lambda x: x["profit"], reverse=True)
     return results

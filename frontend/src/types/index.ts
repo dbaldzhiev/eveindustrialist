@@ -33,6 +33,14 @@ export interface MaterialLine {
   total_cost: number;
 }
 
+export interface MarketStats {
+  vol_1d:    number;
+  vol_7d:    number;
+  avg_daily: number;
+  avg_price: number;
+  trend:     "up" | "down" | "flat";
+}
+
 export interface RequiredSkill {
   skill_id:   number;
   skill_name: string;
@@ -54,6 +62,7 @@ export interface BlueprintResult {
   bpc_count?:        number;
   bpc_total_runs?:   number;
   required_skills?:  RequiredSkill[];
+  market_stats?:     MarketStats;
   material_cost:     number;
   job_cost:          number;
 

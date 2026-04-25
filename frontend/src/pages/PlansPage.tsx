@@ -52,6 +52,14 @@ function fmtNum(v: number) {
   return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
+function fmtVolCompact(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000)     return (n / 1_000).toFixed(1) + "K";
+  return n.toFixed(0);
+}
+
+const PLAN_TREND = { up: "↑", down: "↓", flat: "→" } as const;
+
 // ---------------------------------------------------------------------------
 // Add blueprint row (used in PlanDetail)
 // ---------------------------------------------------------------------------
@@ -515,13 +523,21 @@ function BpCopyRow({
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 bg-eve-bg/50 border border-eve-border/30
                     rounded hover:border-eve-orange/30 transition-colors">
-      {!noPrices && (
-        <div className={`flex-1 min-w-0 text-[10px] font-mono font-semibold
-                         ${profitPerRun * maxRuns >= 0 ? "text-green-400" : "text-red-400"}`}>
-          {isk(profitPerRun * maxRuns)} ISK
-        </div>
-      )}
-      {noPrices && <div className="flex-1" />}
+      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+        {!noPrices && (
+          <span className={`text-[10px] font-mono font-semibold
+                           ${profitPerRun * maxRuns >= 0 ? "text-green-400" : "text-red-400"}`}>
+            {isk(profitPerRun * maxRuns)} ISK
+          </span>
+        )}
+        {bp.market_stats && bp.market_stats.vol_7d > 0 && (
+          <span className="text-[8px] text-eve-muted/50 font-mono">
+            {PLAN_TREND[bp.market_stats.trend]}
+            {" "}{fmtVolCompact(bp.market_stats.vol_1d)}/d
+            {" · "}7d {fmtVolCompact(bp.market_stats.vol_7d)}
+          </span>
+        )}
+      </div>
       <CharacterMiniPortraits characters={eligible} size={18} />
       <div className="flex items-center gap-1 shrink-0 mr-2">
         <span className="text-[10px] text-eve-text font-bold">{maxRuns}</span>

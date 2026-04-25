@@ -20,7 +20,11 @@
       "Bash(python /tmp/query_db.py)",
       "Bash(python /tmp/query_raven.py)",
       "Bash(python /tmp/find_raven_bp.py)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import market; import main; print\\('OK'\\)\")",
+      "Bash(python -m py_compile market.py)",
+      "Bash(python -m py_compile esi.py)",
+      "Bash(python -m py_compile database.py)"
     ]
   }
 }

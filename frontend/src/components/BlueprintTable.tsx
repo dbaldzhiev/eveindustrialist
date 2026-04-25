@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import type { BlueprintResult, SortKey } from "../types";
+import type { BlueprintResult, MarketStats, SortKey } from "../types";
 import { useEligibilityMap } from "../hooks/useEligibleCharacters";
 import { CharacterMiniPortraits } from "./CharacterMiniPortraits";
 
@@ -22,6 +22,18 @@ const PCT_FORMAT = new Intl.NumberFormat("en-US", {
 export function fmtISK(val: number) {
   return ISK_FORMAT.format(val) + " ISK";
 }
+
+function fmtVol(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000)     return (n / 1_000).toFixed(1) + "K";
+  return n.toFixed(0);
+}
+
+const TREND = {
+  up:   { icon: "↑", cls: "text-green-400" },
+  down: { icon: "↓", cls: "text-red-400"   },
+  flat: { icon: "→", cls: "text-eve-muted/50" },
+} as const;
 
 export default function BlueprintTable({ blueprints, activity }: Props) {
   const [sortKey, setSortKey]     = useState<SortKey>("profit");
@@ -156,6 +168,9 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
                           {bp.decryptor_name && <span className="text-eve-orange">D: {bp.decryptor_name}</span>}
                           {bp.is_bpo ? <span className="text-green-500 font-bold uppercase">BPO</span> : <span className="text-yellow-500 font-bold uppercase">BPC</span>}
                         </div>
+                        {bp.market_stats && bp.market_stats.vol_7d > 0 && (
+                          <MarketStatsInline stats={bp.market_stats} />
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right text-eve-muted font-medium">
@@ -228,6 +243,11 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
                             </div>
                           </div>
                         </div>
+
+                        {/* Market data row */}
+                        {bp.market_stats && bp.market_stats.vol_7d > 0 && (
+                          <MarketStatsExpanded stats={bp.market_stats} />
+                        )}
                       </td>
                     </tr>
                   )}
@@ -246,6 +266,49 @@ function ExpandCard({ label, value }: { label: string; value: string }) {
     <div className="bg-eve-surface rounded px-3 py-2 border border-eve-border/50 shadow-inner">
       <div className="text-[10px] uppercase font-bold text-eve-muted mb-0.5">{label}</div>
       <div className="text-eve-text font-medium">{value}</div>
+    </div>
+  );
+}
+
+function MarketStatsInline({ stats }: { stats: MarketStats }) {
+  const t = TREND[stats.trend];
+  return (
+    <div className="flex items-center gap-1.5 text-[9px] mt-0.5 text-eve-muted/60">
+      <span className={`font-bold ${t.cls}`}>{t.icon}</span>
+      <span>{fmtVol(stats.vol_1d)}/d</span>
+      <span className="text-eve-muted/30">·</span>
+      <span>7d: {fmtVol(stats.vol_7d)}</span>
+      <span className="text-eve-muted/30">·</span>
+      <span>avg {fmtVol(stats.avg_daily)}/d</span>
+      <span className="text-eve-muted/30">·</span>
+      <span className="text-eve-muted/80">
+        {new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(stats.avg_price)} ISK
+      </span>
+    </div>
+  );
+}
+
+function MarketStatsExpanded({ stats }: { stats: MarketStats }) {
+  const t = TREND[stats.trend];
+  const trendLabel = { up: "Rising", down: "Falling", flat: "Stable" }[stats.trend];
+  const fmtCompact = (v: number) =>
+    new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(v);
+
+  return (
+    <div className="mt-6 pt-4 border-t border-eve-border/30 space-y-2">
+      <h4 className="text-[10px] font-bold uppercase tracking-widest text-eve-muted pb-1">
+        Market Liquidity
+      </h4>
+      <div className="grid grid-cols-5 gap-3">
+        <ExpandCard label="Yesterday Vol"  value={fmtVol(stats.vol_1d)} />
+        <ExpandCard label="7-Day Vol"      value={fmtVol(stats.vol_7d)} />
+        <ExpandCard label="Avg Daily"      value={fmtVol(stats.avg_daily)} />
+        <ExpandCard label="Avg Price"      value={fmtCompact(stats.avg_price) + " ISK"} />
+        <div className="bg-eve-surface rounded px-3 py-2 border border-eve-border/50 shadow-inner">
+          <div className="text-[10px] uppercase font-bold text-eve-muted mb-0.5">Price Trend</div>
+          <div className={`font-bold ${t.cls}`}>{t.icon} {trendLabel}</div>
+        </div>
+      </div>
     </div>
   );
 }

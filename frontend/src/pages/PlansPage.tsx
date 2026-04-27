@@ -731,6 +731,7 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
   const eligibilityMap = useEligibilityMap(allBps);
 
   const [showProfitableOnly, setShowProfitableOnly] = useState(false);
+  const [hideBpos, setHideBpos] = useState(false);
   const [sortByShoppingCost, setSortByShoppingCost] = useState(false);
 
   // Holds the settings used to load BPs (so we can save plan items with correct me/te/runs)
@@ -799,12 +800,13 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
   const groups = useMemo((): BpGroup[] => {
     const q = search.toLowerCase();
     
-    // 1. Filter by search + profitability
+    // 1. Filter by search + profitability + BPO status
     let filtered = blueprints.filter(bp =>
       (bp.blueprint_name.toLowerCase().includes(q) ||
        bp.product_name.toLowerCase().includes(q) ||
        bp.category_name?.toLowerCase().includes(q)) &&
-      (!showProfitableOnly || bp.profit > 0)
+      (!showProfitableOnly || bp.profit > 0) &&
+      (!hideBpos || !bp.is_bpo)
     );
 
     // 2. Pre-calculate shopping cost for each blueprint if sorting is enabled
@@ -1057,6 +1059,12 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
                     onChange={e => setShowProfitableOnly(e.target.checked)}
                     className="accent-eve-orange" />
                   Profitable Only
+                </label>
+                <label className="flex items-center gap-1.5 text-[10px] text-eve-muted cursor-pointer select-none">
+                  <input type="checkbox" checked={hideBpos}
+                    onChange={e => setHideBpos(e.target.checked)}
+                    className="accent-eve-orange" />
+                  Hide BPOs
                 </label>
                 <label className="flex items-center gap-1.5 text-[10px] text-eve-muted cursor-pointer select-none group">
                   <input type="checkbox" checked={sortByShoppingCost}

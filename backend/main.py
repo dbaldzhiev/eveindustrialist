@@ -1710,16 +1710,10 @@ def plan_shopping_list(
     all_type_ids = list(needed.keys())
     market_prices = get_market_prices(all_type_ids, price_region_id) if solar_system_id else {}
 
-    # Warehouse stock from ESI asset cache (all group characters)
+    # Warehouse stock from curated warehouse_items table
     warehouse: dict[int, int] = {}
     if use_warehouse:
-        char_ids = get_group_character_ids(primary_id)
-        for cid in char_ids:
-            assets = get_cached_assets(cid)
-            if assets:
-                for asset in assets:
-                    tid = asset["type_id"]
-                    warehouse[tid] = warehouse.get(tid, 0) + asset.get("quantity", 1)
+        warehouse = {w["type_id"]: w["quantity"] for w in get_warehouse_items(primary_id)}
 
     material_rows = []
     for type_id, info in sorted(needed.items(), key=lambda x: x[1]["name"]):

@@ -501,8 +501,9 @@ interface BpVariant {
   me:     number;
   te:     number;
   is_bpo: boolean;
-  copies: BlueprintResult[];  // individual physical copies, sorted runs desc
+  copies: (BlueprintResult & { shoppingCost?: number })[]; // individual physical copies, sorted runs desc
 }
+
 interface BpGroup {
   name:     string;
   variants: BpVariant[];
@@ -510,12 +511,13 @@ interface BpGroup {
 }
 
 function BpCopyRow({
-  bp, noPrices, eligibilityMap, onAdd,
+  bp, noPrices, eligibilityMap, onAdd, sortByShoppingCost,
 }: {
-  bp: BlueprintResult;
+  bp: BlueprintResult & { shoppingCost?: number };
   noPrices: boolean;
   eligibilityMap: Map<number, EligibleChar[]>;
   onAdd: (bp: BlueprintResult, runs: number) => void;
+  sortByShoppingCost: boolean;
 }) {
   const maxRuns = bp.is_bpo ? 1 : bp.runs;
   const profitPerRun = bp.runs > 0 ? bp.profit / bp.runs : 0;
@@ -525,12 +527,19 @@ function BpCopyRow({
     <div className="flex items-center gap-2 px-3 py-1.5 bg-eve-bg/50 border border-eve-border/30
                     rounded hover:border-eve-orange/30 transition-colors">
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        {!noPrices && (
-          <span className={`text-[10px] font-mono font-semibold
-                           ${profitPerRun * maxRuns >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {isk(profitPerRun * maxRuns)} ISK
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {!noPrices && (
+            <span className={`text-[10px] font-mono font-semibold
+                             ${profitPerRun * maxRuns >= 0 ? "text-green-400" : "text-red-400"}`}>
+              {isk(profitPerRun * maxRuns)} ISK
+            </span>
+          )}
+          {sortByShoppingCost && bp.shoppingCost !== undefined && (
+            <span className="text-[10px] text-eve-orange font-mono font-semibold">
+              Buy: {isk(bp.shoppingCost)}
+            </span>
+          )}
+        </div>
         {bp.market_stats && bp.market_stats.vol_7d > 0 && (
           <span className="text-[8px] text-eve-muted/50 font-mono">
             {PLAN_TREND[bp.market_stats.trend]}
@@ -555,12 +564,13 @@ function BpCopyRow({
 }
 
 function BpVariantSection({
-  variant, noPrices, eligibilityMap, onAdd,
+  variant, noPrices, eligibilityMap, onAdd, sortByShoppingCost,
 }: {
   variant: BpVariant;
   noPrices: boolean;
   eligibilityMap: Map<number, EligibleChar[]>;
   onAdd: (bp: BlueprintResult, runs: number) => void;
+  sortByShoppingCost: boolean;
 }) {
   const runsList = variant.copies.map(c => c.runs);
   const variantProfit = variant.copies.reduce((s, c) => s + c.profit, 0);
@@ -596,12 +606,14 @@ function BpVariantSection({
           <BpCopyRow
             key={copy.item_id ?? `${copy.me}-${copy.te}-${copy.runs}-${i}`}
             bp={copy} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd}
+            sortByShoppingCost={sortByShoppingCost}
           />
         ))}
       </div>
     </div>
   );
 }
+
 
 function BpGroupRow({
   group, expanded, noPrices, eligibilityMap, onToggle, onAdd, sortByShoppingCost,
@@ -687,6 +699,7 @@ function BpGroupRow({
             <BpVariantSection
               key={`${variant.me}-${variant.te}-${String(variant.is_bpo)}`}
               variant={variant} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd}
+              sortByShoppingCost={sortByShoppingCost}
             />
           ))}
         </div>
@@ -832,7 +845,10 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
             me: vCopies[0].me,
             te: vCopies[0].te,
             is_bpo: vCopies[0].is_bpo,
-            copies: vCopies.slice().sort((a, b) => b.runs - a.runs),
+            copies: vCopies.slice().sort((a, b) => b.runs - a.runs).map(cp => ({
+              ...cp,
+              shoppingCost: bpCosts.get(cp.item_id ? cp.item_id.toString() : `${cp.blueprint_type_id}-${cp.me}-${cp.te}-${cp.runs}`),
+            })),
           }))
           .sort((a, b) => {
             if (a.is_bpo !== b.is_bpo) return a.is_bpo ? -1 : 1;

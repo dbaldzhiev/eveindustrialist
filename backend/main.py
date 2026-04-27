@@ -1183,15 +1183,33 @@ def warehouse_sync(session: str | None = Cookie(None)):
         except Exception:
             pass
 
-    # Group by type_id, summing quantity
+    # Group by type_id, summing quantity (filtering for hangars)
+    # Most items in 'hangar' location_type are what users consider warehouse
     grouped: dict[int, dict] = {}
     for item in all_items:
+        # If item has is_container=True, it's a box, we want the contents
+        if item.get("is_container"): continue
+        
         tid = item["type_id"]
         if tid not in grouped:
             grouped[tid] = {"type_id": tid, "type_name": item["type_name"], "quantity": 0}
         grouped[tid]["quantity"] += item.get("quantity", 1)
 
     result = list(grouped.values())
+    
+    # PERSIST to the database so shopping lists can see it!
+    # We clear the existing entries for this primary_id first to avoid stale data
+    from database import get_db as _get_db
+    conn = _get_db()
+    try:
+        conn.execute("DELETE FROM warehouse_items WHERE character_id = ?", (primary_id,))
+        conn.commit()
+    finally:
+        conn.close()
+        
+    if result:
+        merge_warehouse_items(primary_id, result)
+        
     return {"synced": len(result), "items": result}
 
 
@@ -1666,7 +1684,7 @@ def plan_stats(
     }
 
 
-@app.get("/api/plans/{plan_id}/shopping-list")
+@app.get("/api/plans/{plan_id}/shopping")
 def plan_shopping_list(
     plan_id:              int,
     solar_system_id:      int   = Query(None),

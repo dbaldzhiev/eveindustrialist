@@ -281,7 +281,7 @@ export async function fetchPlanShoppingList(
   settings: Settings,
   useWarehouse: boolean,
 ): Promise<PlanShoppingResult> {
-  const { data } = await api.get<PlanShoppingResult>(`/api/plans/${planId}/shopping-list`, {
+  const { data } = await api.get<PlanShoppingResult>(`/api/plans/${planId}/shopping`, {
     params: { ...bpParams(settings), use_warehouse: useWarehouse },
   });
   return data;

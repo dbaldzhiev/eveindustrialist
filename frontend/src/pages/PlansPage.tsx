@@ -506,6 +506,7 @@ interface BpVariant {
 interface BpGroup {
   name:     string;
   variants: BpVariant[];
+  minGroupCost?: number;
 }
 
 function BpCopyRow({
@@ -603,7 +604,7 @@ function BpVariantSection({
 }
 
 function BpGroupRow({
-  group, expanded, noPrices, eligibilityMap, onToggle, onAdd,
+  group, expanded, noPrices, eligibilityMap, onToggle, onAdd, sortByShoppingCost,
 }: {
   group: BpGroup;
   expanded: boolean;
@@ -611,6 +612,7 @@ function BpGroupRow({
   eligibilityMap: Map<number, EligibleChar[]>;
   onToggle: () => void;
   onAdd: (bp: BlueprintResult, runs: number) => void;
+  sortByShoppingCost: boolean;
 }) {
   const isSingle = group.variants.length === 1 && group.variants[0].copies.length === 1;
   const totalBpcCopies = group.variants
@@ -626,12 +628,19 @@ function BpGroupRow({
           <span className="text-[10px] font-semibold text-eve-text truncate flex-1 min-w-0">
             {group.name}
           </span>
-          {!noPrices && (
-            <span className={`text-[9px] font-mono font-semibold shrink-0 ml-2
-                              ${groupProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
-              {isk(groupProfit)} ISK
-            </span>
-          )}
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            {sortByShoppingCost && group.minGroupCost !== undefined && (
+              <span className="text-[9px] text-eve-orange font-mono font-semibold">
+                Buy: {isk(group.minGroupCost)}
+              </span>
+            )}
+            {!noPrices && (
+              <span className={`text-[9px] font-mono font-semibold
+                                ${groupProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {isk(groupProfit)} ISK
+              </span>
+            )}
+          </div>
         </div>
         <BpVariantSection variant={group.variants[0]} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd} />
       </div>
@@ -648,12 +657,19 @@ function BpGroupRow({
         <span className="text-[10px] font-semibold text-eve-text group-hover/hdr:text-eve-orange flex-1 truncate min-w-0">
           {group.name}
         </span>
-        {!noPrices && (
-          <span className={`text-[9px] font-mono font-semibold shrink-0
-                            ${groupProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
-            {isk(groupProfit)} ISK
-          </span>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {sortByShoppingCost && group.minGroupCost !== undefined && (
+            <span className="text-[9px] text-eve-orange font-mono font-semibold">
+              Buy: {isk(group.minGroupCost)}
+            </span>
+          )}
+          {!noPrices && (
+            <span className={`text-[9px] font-mono font-semibold
+                              ${groupProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+              {isk(groupProfit)} ISK
+            </span>
+          )}
+        </div>
         <span className="text-[9px] text-eve-muted shrink-0">
           {hasBpo && "BPO"}
           {totalBpcCopies > 0 && ` · ${totalBpcCopies} cop${totalBpcCopies !== 1 ? "ies" : "y"}`}
@@ -700,6 +716,9 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
     [blueprints, queue],
   );
   const eligibilityMap = useEligibilityMap(allBps);
+
+  const [showProfitableOnly, setShowProfitableOnly] = useState(false);
+  const [sortByShoppingCost, setSortByShoppingCost] = useState(false);
 
   // Holds the settings used to load BPs (so we can save plan items with correct me/te/runs)
   const simSettingsRef = useRef<Settings>(DEFAULT_SETTINGS);
@@ -750,20 +769,57 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
     init();
   }, []);
 
+  // Calculate remaining warehouse after queue consumption
+  const remainingWarehouse = useMemo(() => {
+    const rem = { ...warehouse };
+    queue.forEach(({ bp, chosen_runs }) => {
+      const scale = bp.runs > 0 ? chosen_runs / bp.runs : 1;
+      bp.materials.forEach(m => {
+        const needed = Math.ceil(m.quantity * scale);
+        rem[m.type_id] = (rem[m.type_id] || 0) - needed;
+      });
+    });
+    return rem;
+  }, [warehouse, queue]);
+
   // Group individual copies by blueprint_name → (me, te, is_bpo) variant
   const groups = useMemo((): BpGroup[] => {
     const q = search.toLowerCase();
-    const filtered = blueprints.filter(bp =>
-      bp.blueprint_name.toLowerCase().includes(q) ||
-      bp.product_name.toLowerCase().includes(q) ||
-      bp.category_name?.toLowerCase().includes(q)
+    
+    // 1. Filter by search + profitability
+    let filtered = blueprints.filter(bp =>
+      (bp.blueprint_name.toLowerCase().includes(q) ||
+       bp.product_name.toLowerCase().includes(q) ||
+       bp.category_name?.toLowerCase().includes(q)) &&
+      (!showProfitableOnly || bp.profit > 0)
     );
+
+    // 2. Pre-calculate shopping cost for each blueprint if sorting is enabled
+    const bpCosts = new Map<string, number>();
+    if (sortByShoppingCost) {
+      filtered.forEach(bp => {
+        let cost = 0;
+        // BPO cost is calculated for 1 run (initial add), BPC for its full runs.
+        const targetRuns = bp.is_bpo ? 1 : bp.runs;
+        const scale = bp.runs > 0 ? targetRuns / bp.runs : 1;
+        
+        bp.materials.forEach(m => {
+          const inStock = Math.max(0, remainingWarehouse[m.type_id] || 0);
+          const needed = Math.ceil(m.quantity * scale);
+          const toBuy = Math.max(0, needed - inStock);
+          cost += toBuy * m.unit_price;
+        });
+        bpCosts.set(bp.item_id ? bp.item_id.toString() : `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.runs}`, cost);
+      });
+    }
+
     const nameMap = new Map<string, BlueprintResult[]>();
     filtered.forEach(bp => {
       if (!nameMap.has(bp.blueprint_name)) nameMap.set(bp.blueprint_name, []);
       nameMap.get(bp.blueprint_name)!.push(bp);
     });
-    return Array.from(nameMap.entries())
+
+    const result = Array.from(nameMap.entries())
       .map(([name, copies]) => {
         const variantMap = new Map<string, BlueprintResult[]>();
         copies.forEach(bp => {
@@ -782,10 +838,23 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
             if (a.is_bpo !== b.is_bpo) return a.is_bpo ? -1 : 1;
             return b.me - a.me;
           });
-        return { name, variants };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [blueprints, search]);
+        
+        // Calculate min shopping cost for this group if sorting
+        let minGroupCost = 0;
+        if (sortByShoppingCost) {
+          minGroupCost = Math.min(...copies.map(bp => bpCosts.get(bp.item_id ? bp.item_id.toString() : `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.runs}`) ?? 0));
+        }
+
+        return { name, variants, minGroupCost };
+      });
+
+    // 3. Sort groups
+    if (sortByShoppingCost) {
+      return result.sort((a, b) => (a.minGroupCost ?? 0) - (b.minGroupCost ?? 0) || a.name.localeCompare(b.name));
+    } else {
+      return result.sort((a, b) => a.name.localeCompare(b.name));
+    }
+  }, [blueprints, search, showProfitableOnly, sortByShoppingCost, remainingWarehouse]);
 
   const toggleGroup = useCallback((name: string) => {
     setExpandedGroups(prev => {
@@ -949,21 +1018,40 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
 
           {/* LEFT: Owned Blueprint Panel */}
           <div className="lg:col-span-3 bg-eve-surface border border-eve-border rounded-lg flex flex-col overflow-hidden">
-            <div className="p-3 border-b border-eve-border bg-eve-bg/50 flex items-center gap-3">
-              <div className="text-[10px] uppercase font-bold text-eve-muted tracking-widest shrink-0">
-                Owned Blueprints
+            <div className="p-3 border-b border-eve-border bg-eve-bg/50 flex flex-col gap-2">
+              <div className="flex items-center gap-3">
+                <div className="text-[10px] uppercase font-bold text-eve-muted tracking-widest shrink-0">
+                  Owned Blueprints
+                </div>
+                <span className="text-[9px] text-eve-muted/60">
+                  {blueprints.length} bp{blueprints.length !== 1 ? "s" : ""}
+                </span>
+                <input
+                  type="text"
+                  placeholder="Filter name…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="flex-1 bg-eve-bg border border-eve-border rounded px-2 py-1
+                             text-xs text-eve-text focus:outline-none focus:border-eve-orange transition-colors"
+                />
               </div>
-              <span className="text-[9px] text-eve-muted/60">
-                {blueprints.length} bp{blueprints.length !== 1 ? "s" : ""}
-              </span>
-              <input
-                type="text"
-                placeholder="Filter…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="flex-1 bg-eve-bg border border-eve-border rounded px-2 py-1
-                           text-xs text-eve-text focus:outline-none focus:border-eve-orange transition-colors"
-              />
+              <div className="flex items-center gap-4 border-t border-eve-border/30 pt-2">
+                <label className="flex items-center gap-1.5 text-[10px] text-eve-muted cursor-pointer select-none">
+                  <input type="checkbox" checked={showProfitableOnly}
+                    onChange={e => setShowProfitableOnly(e.target.checked)}
+                    className="accent-eve-orange" />
+                  Profitable Only
+                </label>
+                <label className="flex items-center gap-1.5 text-[10px] text-eve-muted cursor-pointer select-none group">
+                  <input type="checkbox" checked={sortByShoppingCost}
+                    onChange={e => setSortByShoppingCost(e.target.checked)}
+                    className="accent-eve-orange" />
+                  Sort by Shopping Cost
+                  <span className="hidden group-hover:inline ml-1 text-[9px] text-eve-orange/60">
+                    (Minimizes ISK to buy)
+                  </span>
+                </label>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
@@ -981,6 +1069,7 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
                     eligibilityMap={eligibilityMap}
                     onToggle={() => toggleGroup(group.name)}
                     onAdd={addToQueue}
+                    sortByShoppingCost={sortByShoppingCost}
                   />
                 ))
               )}

@@ -750,7 +750,7 @@ function BpGroupRow({
 // ---------------------------------------------------------------------------
 // Simulation Mode
 // ---------------------------------------------------------------------------
-function SimulationMode({ onClose }: { onClose: () => void }) {
+function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
   const [blueprints, setBlueprints] = useState<BlueprintResult[]>([]);
   const [warehouse, setWarehouse]   = useState<Record<number, number>>({});
   const [queue, setQueue]           = useState<QueueItem[]>([]);
@@ -1011,7 +1011,8 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
     setSaving(true);
     try {
       const plan = await createPlan(`Simulated Plan (${new Date().toLocaleTimeString()})`);
-      for (const { bp, chosen_runs } of queue) {
+      for (let i = 0; i < queue.length; i++) {
+        const { bp, chosen_runs } = queue[i];
         await addPlanItem(plan.id, {
           blueprint_type_id: bp.blueprint_type_id,
           blueprint_name:    bp.blueprint_name,
@@ -1022,7 +1023,9 @@ function SimulationMode({ onClose }: { onClose: () => void }) {
           te:   bp.te,
         });
       }
-      onClose();
+      onClose(plan);
+    } catch (e: any) {
+      alert("Failed to save plan: " + (e.response?.data?.detail || e.message));
     } finally {
       setSaving(false);
     }
@@ -1364,7 +1367,12 @@ export default function PlansPage({ character }: Props) {
   const [loadingSuggest, setLoadingSuggest] = useState(false);
 
   const loadPlans = () => {
-    fetchPlans().then(setPlans).catch(() => {});
+    fetchPlans()
+      .then(setPlans)
+      .catch((e) => {
+        console.error("Failed to load plans:", e);
+        alert("Failed to load plans: " + (e.response?.data?.detail || e.message));
+      });
   };
 
   useEffect(() => { loadPlans(); }, []);
@@ -1430,7 +1438,7 @@ export default function PlansPage({ character }: Props) {
       <div className="min-h-screen bg-eve-bg font-eve">
         <Navbar character={character} />
         <main className="max-w-screen-2xl mx-auto px-4 py-6">
-          <SimulationMode onClose={() => { setSimMode(false); loadPlans(); }} />
+          <SimulationMode onClose={(plan) => { setSimMode(false); loadPlans(); if (plan) setSelected(plan); }} />
         </main>
       </div>
     );

@@ -1328,6 +1328,11 @@ def rename_plan_endpoint(plan_id: int, body: PlanIn, session: str | None = Cooki
     return {"ok": True}
 
 
+@app.get("/api/plans")
+def list_plans(session: str | None = Cookie(None)):
+    return get_plans(_primary(session))
+
+
 @app.post("/api/plans", status_code=201)
 def new_plan(body: PlanIn, session: str | None = Cookie(None)):
     return create_plan(_primary(session), body.name)

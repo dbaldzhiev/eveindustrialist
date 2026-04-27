@@ -228,7 +228,7 @@ def _calc_profits_for_bps(
                 "isk_per_hour": 0, "sell_price": 0, "product_quantity": 0,
                 "materials": [],
             }
-            if bp.get("character_id"): d["character_id"] = bp["character_id"]
+            if bp.get("character_id"): d["character_ids"] = [bp["character_id"]]
             matching_bpcs = bpc_inventory.get(bp["type_id"], [])
             d["bpc_count"] = len(matching_bpcs)
             d["bpc_total_runs"] = sum(b.get("runs", 0) for b in matching_bpcs)
@@ -275,6 +275,8 @@ def _calc_profits_for_bps(
                 d["category_name"] = category_map.get(d["product_type_id"], "Unknown")
                 if bp.get("item_id"):
                     d["item_id"] = bp["item_id"]
+                if bp.get("character_id"):
+                    d["character_ids"] = [bp["character_id"]]
                 results.append(d)
         # Attach per-blueprint skill requirements for individual mode (always build, activityID=1)
         bp_type_ids = list({r["blueprint_type_id"] for r in results})
@@ -302,10 +304,16 @@ def _calc_profits_for_bps(
         key = (bp["type_id"], bp["me"], bp["te"], is_bpo, d_name)
         if key not in aggregated_bps:
             aggregated_bps[key] = dict(bp)
+            aggregated_bps[key]["character_ids"] = []
             # Initialize aggregate runs: BPOs use indicators, BPCs will sum actual runs
             if not is_bpo:
                 aggregated_bps[key]["runs"] = 0
-        
+
+        if bp.get("character_id"):
+            cid = bp["character_id"]
+            if cid not in aggregated_bps[key]["character_ids"]:
+                aggregated_bps[key]["character_ids"].append(cid)
+
         if not is_bpo:
             # Sum the actual runs field from ESI for BPCs
             aggregated_bps[key]["runs"] += bp.get("runs", 1)
@@ -358,8 +366,8 @@ def _calc_profits_for_bps(
         if result and result.profit >= min_profit:
             d = result.to_api_dict(include_materials=include_materials)
             d["category_name"] = category_map.get(d["product_type_id"], "Unknown")
-            if bp.get("character_id"):
-                d["character_id"] = bp["character_id"]
+            if bp.get("character_ids"):
+                d["character_ids"] = bp["character_ids"]
             if bp.get("is_invention"):
                 d["is_invention"] = True
                 d["decryptor_name"] = bp["decryptor"]["name"]

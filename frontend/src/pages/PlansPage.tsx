@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import Navbar from "../components/Navbar";
-import { useEligibilityMap, type EligibleChar } from "../hooks/useEligibleCharacters";
+import { useEligibilityMap, useCharacterSkillData, type EligibleChar } from "../hooks/useEligibleCharacters";
 import { CharacterMiniPortraits } from "../components/CharacterMiniPortraits";
 import {
   fetchPlans, createPlan, deletePlan,
@@ -549,6 +549,32 @@ interface BpGroup {
   minGroupCost?: number;
 }
 
+function BpOwnerPortraits({ ids, nameMap }: { ids: number[]; nameMap: Map<number, string> }) {
+  return (
+    <div className="flex items-center gap-0.5 shrink-0">
+      {ids.map(id => {
+        const name = nameMap.get(id) ?? `#${id}`;
+        return (
+          <div key={id} className="relative group/owner">
+            <img
+              src={`https://images.evetech.net/characters/${id}/portrait?size=32`}
+              alt={name}
+              className="rounded-full border border-amber-400/60"
+              style={{ width: 16, height: 16 }}
+            />
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5
+                            bg-eve-surface border border-eve-border rounded text-[9px] text-eve-text
+                            whitespace-nowrap opacity-0 group-hover/owner:opacity-100 transition-opacity
+                            pointer-events-none z-50 shadow-lg">
+              {name}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function BpCopyRow({
   bp, noPrices, eligibilityMap, onAdd, sortByShoppingCost,
 }: {
@@ -561,6 +587,10 @@ function BpCopyRow({
   const maxRuns = bp.is_bpo ? 1 : bp.runs;
   const profitPerRun = bp.runs > 0 ? bp.profit / bp.runs : 0;
   const eligible = eligibilityMap.get(bp.blueprint_type_id) ?? [];
+  const charSkillData = useCharacterSkillData();
+  const charNameMap = useMemo(() =>
+    new Map(charSkillData.map(c => [c.character_id, c.character_name])),
+  [charSkillData]);
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 bg-eve-bg/50 border border-eve-border/30
@@ -587,6 +617,9 @@ function BpCopyRow({
           </span>
         )}
       </div>
+      {bp.character_ids && bp.character_ids.length > 0 && (
+        <BpOwnerPortraits ids={bp.character_ids} nameMap={charNameMap} />
+      )}
       <CharacterMiniPortraits characters={eligible} size={18} />
       <div className="flex items-center gap-1 shrink-0 mr-2">
         <span className="text-[10px] text-eve-text font-bold">{maxRuns}</span>

@@ -179,16 +179,18 @@ export interface Plan {
 }
 
 export interface PlanItem {
-  id:               number;
-  plan_id:          number;
+  id:                number;
+  plan_id:           number;
   blueprint_type_id: number;
-  blueprint_name:   string;
-  product_type_id:  number;
-  product_name:     string;
-  runs:             number;
-  me:               number;
-  te:               number;
+  blueprint_name:    string;
+  product_type_id:   number;
+  product_name:      string;
+  runs:              number;
+  me:                number;
+  te:                number;
+  status:            string;
 }
+
 
 export interface PlanStats {
   total_material_cost:  number;

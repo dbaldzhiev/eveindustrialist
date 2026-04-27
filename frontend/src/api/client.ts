@@ -208,8 +208,9 @@ export async function updatePlanItemApi(
   runs: number,
   me: number,
   te: number,
+  status?: string,
 ): Promise<void> {
-  await api.patch(`/api/plans/${planId}/items/${itemId}`, { runs, me, te });
+  await api.patch(`/api/plans/${planId}/items/${itemId}`, { runs, me, te, status });
 }
 
 export async function syncWarehouse(): Promise<{ synced: number }> {
@@ -242,6 +243,10 @@ export async function createPlan(name: string): Promise<Plan> {
 
 export async function deletePlan(planId: number): Promise<void> {
   await api.delete(`/api/plans/${planId}`);
+}
+
+export async function fetchPlanRename(planId: number, name: string): Promise<void> {
+  await api.put(`/api/plans/${planId}`, { name });
 }
 
 export async function fetchPlanItems(planId: number): Promise<PlanItem[]> {

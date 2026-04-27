@@ -181,7 +181,8 @@ def init_db():
             product_name      TEXT    NOT NULL DEFAULT '',
             runs              INTEGER NOT NULL DEFAULT 1,
             me                INTEGER NOT NULL DEFAULT 0,
-            te                INTEGER NOT NULL DEFAULT 0
+            te                INTEGER NOT NULL DEFAULT 0,
+            status            TEXT    NOT NULL DEFAULT 'active'
         );
     """)
     conn.commit()
@@ -213,6 +214,9 @@ def _migrate(conn: sqlite3.Connection):
     # asset_cache: container + location metadata
     _add_column_if_missing(conn, "asset_cache", "is_container",  "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(conn, "asset_cache", "location_type", "TEXT    NOT NULL DEFAULT ''")
+
+    # plan_items: manufacturing status
+    _add_column_if_missing(conn, "plan_items", "status", "TEXT NOT NULL DEFAULT 'active'")
 
 
     migrations = [
@@ -1072,14 +1076,14 @@ def get_plan_items(plan_id: int) -> list[dict]:
 
 
 def add_plan_item(plan_id: int, blueprint_type_id: int, blueprint_name: str,
-                  product_type_id: int, product_name: str,
-                  runs: int, me: int, te: int) -> dict:
+                   product_type_id: int, product_name: str,
+                   runs: int, me: int, te: int, status: str = "active") -> dict:
     conn = get_db()
     try:
         cur = conn.execute(
             "INSERT INTO plan_items (plan_id, blueprint_type_id, blueprint_name, "
-            "product_type_id, product_name, runs, me, te) VALUES (?,?,?,?,?,?,?,?)",
-            (plan_id, blueprint_type_id, blueprint_name, product_type_id, product_name, runs, me, te),
+            "product_type_id, product_name, runs, me, te, status) VALUES (?,?,?,?,?,?,?,?,?)",
+            (plan_id, blueprint_type_id, blueprint_name, product_type_id, product_name, runs, me, te, status),
         )
         conn.commit()
         return dict(conn.execute("SELECT * FROM plan_items WHERE id = ?", (cur.lastrowid,)).fetchone())
@@ -1087,18 +1091,23 @@ def add_plan_item(plan_id: int, blueprint_type_id: int, blueprint_name: str,
         conn.close()
 
 
-def update_plan_item(plan_id: int, item_id: int, runs: int, me: int, te: int) -> bool:
+def update_plan_item(plan_id: int, item_id: int, runs: int, me: int, te: int, status: str | None = None) -> bool:
     conn = get_db()
     try:
-        cur = conn.execute(
-            "UPDATE plan_items SET runs=?, me=?, te=? WHERE id=? AND plan_id=?",
-            (runs, me, te, item_id, plan_id),
-        )
+        if status is not None:
+            cur = conn.execute(
+                "UPDATE plan_items SET runs=?, me=?, te=?, status=? WHERE id=? AND plan_id=?",
+                (runs, me, te, status, item_id, plan_id),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE plan_items SET runs=?, me=?, te=? WHERE id=? AND plan_id=?",
+                (runs, me, te, item_id, plan_id),
+            )
         conn.commit()
         return cur.rowcount > 0
     finally:
         conn.close()
-
 
 def remove_plan_item(plan_id: int, item_id: int) -> bool:
     conn = get_db()

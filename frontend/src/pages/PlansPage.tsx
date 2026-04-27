@@ -166,7 +166,7 @@ function AddBlueprintRow({ planId, onAdded }: { planId: number; onAdded: () => v
 // ---------------------------------------------------------------------------
 // Plan detail panel
 // ---------------------------------------------------------------------------
-function PlanDetail({ plan, onClose }: { plan: Plan; onClose: () => void }) {
+function PlanDetail({ plan, onClose, onRename, onDelete }: { plan: Plan; onClose: () => void; onRename: (p: Plan) => void; onDelete: (id: number) => void }) {
   const [items, setItems]               = useState<PlanItem[]>([]);
   const [stats, setStats]               = useState<PlanStats | null>(null);
   const [shopping, setShopping]         = useState<PlanShoppingResult | null>(null);
@@ -263,6 +263,16 @@ function PlanDetail({ plan, onClose }: { plan: Plan; onClose: () => void }) {
     }
   };
 
+  const toggleItemDone = async (item: PlanItem) => {
+    const newStatus = item.status === "done" ? "active" : "done";
+    try {
+      await updatePlanItemApi(plan.id, item.id, item.runs, item.me, item.te, newStatus);
+      loadItems(); setStats(null); setShopping(null);
+    } catch (e: any) {
+      alert("Failed to update item: " + e.message);
+    }
+  };
+
   const copyMultibuy = () => {
     if (!shopping?.multibuy) return;
     navigator.clipboard.writeText(shopping.multibuy).then(() => {
@@ -272,12 +282,29 @@ function PlanDetail({ plan, onClose }: { plan: Plan; onClose: () => void }) {
 
   return (
     <div className="bg-eve-surface border border-eve-border rounded-lg p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-eve-text">{plan.name}</h2>
-        <button onClick={onClose}
-          className="text-xs text-eve-muted hover:text-eve-orange transition-colors">
-          ← Back to plans
-        </button>
+      <div className="flex items-center justify-between border-b border-eve-border pb-3 mb-2">
+        <div className="flex items-center gap-4">
+          <button onClick={onClose}
+            className="text-xs text-eve-muted hover:text-eve-orange transition-colors"
+            title="Back to plans">
+            ← Back
+          </button>
+          <h2 className="text-lg font-bold text-eve-orange">{plan.name}</h2>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => onRename(plan)}
+            className="text-[10px] text-eve-muted hover:text-eve-text uppercase font-bold"
+          >
+            Rename
+          </button>
+          <button
+            onClick={() => { if (confirm("Delete this plan?")) onDelete(plan.id); }}
+            className="text-[10px] text-red-500/70 hover:text-red-500 uppercase font-bold"
+          >
+            Delete
+          </button>
+        </div>
       </div>
 
       {items.length === 0 ? (
@@ -289,6 +316,7 @@ function PlanDetail({ plan, onClose }: { plan: Plan; onClose: () => void }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-eve-border bg-eve-bg">
+                <th className="px-3 py-2 text-center text-xs text-eve-muted w-10">Done</th>
                 <th className="px-3 py-2 text-left text-xs text-eve-muted">Blueprint</th>
                 <th className="px-3 py-2 text-left text-xs text-eve-muted">Product</th>
                 <th className="px-3 py-2 text-right text-xs text-eve-muted w-20">Runs</th>
@@ -300,9 +328,14 @@ function PlanDetail({ plan, onClose }: { plan: Plan; onClose: () => void }) {
             <tbody>
               {items.map((item) => {
                 const isEditing = editingId === item.id;
+                const isDone = item.status === "done";
                 return (
-                  <tr key={item.id} className="border-b border-eve-border/40 hover:bg-eve-bg/50">
-                    <td className="px-3 py-2 text-eve-text">{item.blueprint_name}</td>
+                  <tr key={item.id} className={`border-b border-eve-border/40 hover:bg-eve-bg/50 transition-colors ${isDone ? "opacity-50 grayscale-[0.5]" : ""}`}>
+                    <td className="px-3 py-2 text-center">
+                      <input type="checkbox" checked={isDone} onChange={() => toggleItemDone(item)}
+                             className="accent-eve-orange cursor-pointer" />
+                    </td>
+                    <td className={`px-3 py-2 text-eve-text ${isDone ? "line-through" : ""}`}>{item.blueprint_name}</td>
                     <td className="px-3 py-2 text-eve-muted">{item.product_name}</td>
                     {isEditing ? (
                       <>
@@ -1408,7 +1441,25 @@ export default function PlansPage({ character }: Props) {
       <div className="min-h-screen bg-eve-bg font-eve">
         <Navbar character={character} />
         <main className="max-w-screen-lg mx-auto px-4 py-6">
-          <PlanDetail plan={selected} onClose={() => setSelected(null)} />
+          <PlanDetail 
+            plan={selected} 
+            onClose={() => setSelected(null)} 
+            onRename={(p) => {
+              const name = prompt("Enter new plan name:", p.name);
+              if (name && name.trim()) {
+                fetchPlanRename(p.id, name.trim()).then(() => {
+                  setSelected({...p, name: name.trim()});
+                  loadPlans();
+                });
+              }
+            }}
+            onDelete={(id) => {
+              deletePlan(id).then(() => {
+                setSelected(null);
+                loadPlans();
+              });
+            }}
+          />
         </main>
       </div>
     );

@@ -1315,14 +1315,17 @@ class PlanItemIn(BaseModel):
 
 
 class PlanItemUpdateIn(BaseModel):
-    runs: int = 1
-    me:   int = 0
-    te:   int = 0
+    runs:   int          = 1
+    me:     int          = 0
+    te:     int          = 0
+    status: str | None = None
 
 
-@app.get("/api/plans")
-def list_plans(session: str | None = Cookie(None)):
-    return get_plans(_primary(session))
+@app.put("/api/plans/{plan_id}")
+def rename_plan_endpoint(plan_id: int, body: PlanIn, session: str | None = Cookie(None)):
+    if not rename_plan(_primary(session), plan_id, body.name):
+        raise HTTPException(status_code=404, detail="Plan not found")
+    return {"ok": True}
 
 
 @app.post("/api/plans", status_code=201)
@@ -1366,7 +1369,7 @@ def update_plan_item_endpoint(
     session: str | None = Cookie(None),
 ):
     _primary(session)
-    if not update_plan_item(plan_id, item_id, body.runs, body.me, body.te):
+    if not update_plan_item(plan_id, item_id, body.runs, body.me, body.te, body.status):
         raise HTTPException(status_code=404, detail="Item not found")
     return {"ok": True}
 
@@ -1481,7 +1484,10 @@ def plan_summary(
     char       = get_current_character(session)
     primary_id = int(char["uid"])
 
-    items = get_plan_items(plan_id)
+    all_items = get_plan_items(plan_id)
+    # Exclude items marked as done
+    items = [i for i in all_items if i.get("status") != "done"]
+    
     if not items:
         return {
             "material_cost": 0, "revenue": 0, "profit": 0,
@@ -1598,7 +1604,9 @@ def plan_stats(
     """Per-item profit statistics for a plan."""
     char       = get_current_character(session)
     primary_id = int(char["uid"])
-    items      = get_plan_items(plan_id)
+    all_items  = get_plan_items(plan_id)
+    # Exclude items marked as done
+    items      = [i for i in all_items if i.get("status") != "done"]
 
     if not items:
         return {
@@ -1707,7 +1715,9 @@ def plan_shopping_list(
     """Shopping list (materials to buy) for a plan."""
     char       = get_current_character(session)
     primary_id = int(char["uid"])
-    items      = get_plan_items(plan_id)
+    all_items  = get_plan_items(plan_id)
+    # Exclude items marked as done
+    items      = [i for i in all_items if i.get("status") != "done"]
 
     if not items:
         return {"materials": [], "multibuy": ""}

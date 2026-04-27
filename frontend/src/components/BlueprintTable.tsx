@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import type { BlueprintResult, MarketStats, SortKey } from "../types";
-import { useEligibilityMap } from "../hooks/useEligibleCharacters";
+import { useEligibilityMap, useCharacterSkillData } from "../hooks/useEligibleCharacters";
 import { CharacterMiniPortraits } from "./CharacterMiniPortraits";
 
 interface Props {
@@ -41,6 +41,10 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const eligibilityMap = useEligibilityMap(activity ? blueprints : []);
   const colCount = activity ? 7 : 6;
+  const charSkillData = useCharacterSkillData();
+  const charNameMap = useMemo(() =>
+    new Map(charSkillData.map(c => [c.character_id, c.character_name])),
+  [charSkillData]);
 
   // Category Filtering
   const categories = useMemo(() => {
@@ -158,9 +162,14 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
                   >
                     <td className="px-4 py-3">
                       <div className="flex flex-col">
-                        <span className="font-semibold text-eve-text group-hover:text-eve-orange transition-colors">
-                          {cleanBpName}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-eve-text group-hover:text-eve-orange transition-colors">
+                            {cleanBpName}
+                          </span>
+                          {bp.character_ids && bp.character_ids.length > 0 && (
+                            <OwnerPortraits ids={bp.character_ids} nameMap={charNameMap} />
+                          )}
+                        </div>
                         <div className="flex gap-2 text-[10px] mt-0.5">
                           <span className="text-eve-muted font-bold uppercase">{bp.category_name}</span>
                           <span className="text-blue-400">ME {bp.me}</span>
@@ -257,6 +266,32 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function OwnerPortraits({ ids, nameMap }: { ids: number[]; nameMap: Map<number, string> }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {ids.map(id => {
+        const name = nameMap.get(id) ?? `#${id}`;
+        return (
+          <div key={id} className="relative group/owner">
+            <img
+              src={`https://images.evetech.net/characters/${id}/portrait?size=32`}
+              alt={name}
+              className="rounded-full border border-eve-border/60"
+              style={{ width: 16, height: 16 }}
+            />
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5
+                            bg-eve-surface border border-eve-border rounded text-[9px] text-eve-text
+                            whitespace-nowrap opacity-0 group-hover/owner:opacity-100 transition-opacity
+                            pointer-events-none z-50 shadow-lg">
+              {name}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

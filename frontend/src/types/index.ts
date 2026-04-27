@@ -57,6 +57,7 @@ export interface BlueprintResult {
   runs:              number;
   is_bpo:            boolean;
   item_id?:          number;
+  character_ids?:    number[];
   is_invention?:     boolean;
   decryptor_name?:   string;
   bpc_count?:        number;

@@ -25,7 +25,10 @@
       "Bash(python -m py_compile market.py)",
       "Bash(python -m py_compile esi.py)",
       "Bash(python -m py_compile database.py)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "WebSearch",
+      "WebFetch(domain:sde.riftforeve.online)",
+      "Bash(grep -E \"\\\\.py$\")"
     ]
   }
 }

@@ -2,7 +2,8 @@ import { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
 import {
     fetchWarehouse, fetchAppSettings,
-    fetchAssetLocations, saveAppSettings
+    fetchAssetLocations, saveAppSettings,
+    syncWarehouse
 } from "../api/client";
 import { Spinner, fmtISK } from "./DashboardPage";
 import { useRefresh } from "../context/RefreshContext";
@@ -27,6 +28,8 @@ export default function WarehousePage({ character }: Props) {
 
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
+  const [syncing, setSyncing]         = useState(false);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -37,6 +40,20 @@ export default function WarehousePage({ character }: Props) {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+        await syncWarehouse();
+        const inv = await fetchWarehouse();
+        setItems(inv);
+    } catch (e: any) {
+        setError("Sync failed: " + e.message);
+    } finally {
+        setSyncing(false);
     }
   };
 
@@ -148,7 +165,23 @@ export default function WarehousePage({ character }: Props) {
           </div>
 
           <div className="flex items-center gap-6 self-end md:self-center">
-            <div className="text-right">
+            <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="flex items-center gap-2 bg-eve-orange hover:bg-eve-orange/80 disabled:opacity-50 text-white text-xs font-bold uppercase px-4 py-2 rounded shadow-lg transition-all"
+            >
+                {syncing ? (
+                    <>
+                        <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Syncing...
+                    </>
+                ) : (
+                    <>
+                        <span className="text-sm">🔄</span> Sync All Assets
+                    </>
+                )}
+            </button>
+            <div className="text-right border-l border-eve-border/50 pl-6">
                 <div className="text-[10px] uppercase font-bold text-eve-muted">Estimated Value</div>
                 <div className="text-2xl font-bold text-eve-orange">{fmtISK(totalValue)}</div>
             </div>

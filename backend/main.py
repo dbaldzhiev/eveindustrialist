@@ -1450,7 +1450,7 @@ def plan_summary(
     structure_cost_bonus: float = Query(0.0),
     material_order_type:  str   = Query("sell"),
     product_order_type:   str   = Query("sell"),
-    use_warehouse:        bool  = Query(True),
+    use_warehouse:        bool  = Query(False),
     session: str | None = Cookie(None),
 ):
     """

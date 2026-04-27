@@ -170,7 +170,13 @@ function PlanDetail({ plan, onClose }: { plan: Plan; onClose: () => void }) {
   const [items, setItems]               = useState<PlanItem[]>([]);
   const [stats, setStats]               = useState<PlanStats | null>(null);
   const [shopping, setShopping]         = useState<PlanShoppingResult | null>(null);
-  const [useWarehouse, setUseWarehouse] = useState(false);
+  const [useWarehouse, setUseWarehouse] = useState(true);
+
+  // ...
+
+  useEffect(() => {
+    if (shopping) loadShopping();
+  }, [useWarehouse]);
   const [loadingStats, setLoadingStats] = useState(false);
   const [loadingShopping, setLoadingShopping] = useState(false);
   const [copied, setCopied]             = useState(false);
@@ -422,7 +428,7 @@ function PlanDetail({ plan, onClose }: { plan: Plan; onClose: () => void }) {
             </span>
             <label className="flex items-center gap-2 text-xs text-eve-muted cursor-pointer">
               <input type="checkbox" checked={useWarehouse}
-                onChange={(e) => { setUseWarehouse(e.target.checked); setShopping(null); }}
+                onChange={(e) => setUseWarehouse(e.target.checked)}
                 className="accent-eve-orange" />
               Subtract warehouse stock
             </label>

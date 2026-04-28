@@ -473,7 +473,7 @@ def get_invention_variants(bp_type_ids: list[int]) -> list[dict]:
             for row in conn.execute(
                 f"""
                 SELECT p.typeID AS base_bp_id, p.productTypeID AS result_bp_id,
-                       t.typeName AS result_bp_name
+                       t.typeName AS result_bp_name, p.probability
                 FROM   industryActivityProducts p
                 JOIN   invTypes t ON t.typeID = p.productTypeID
                 WHERE  p.typeID IN ({ph}) AND p.activityID = 8
@@ -569,6 +569,11 @@ def get_reaction_bp_ids() -> list[int]:
         """
     )
     return [r["typeID"] for r in rows]
+
+
+def get_type_id_by_name(name: str) -> int | None:
+    row = _query_one("SELECT typeID FROM invTypes WHERE typeName = ? AND published = 1", (name,))
+    return row["typeID"] if row else None
 
 
 def get_type_name(type_id: int) -> str | None:

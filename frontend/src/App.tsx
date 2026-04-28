@@ -5,6 +5,7 @@ import DashboardPage from "./pages/DashboardPage";
 import InventionPage from "./pages/InventionPage";
 import CopyingPage from "./pages/CopyingPage";
 import ExplorerPage from "./pages/ExplorerPage";
+import SellerPage from "./pages/SellerPage";
 import ReactionsPage from "./pages/ReactionsPage";
 import WarehousePage from "./pages/WarehousePage";
 import SlotsPage from "./pages/SlotsPage";
@@ -57,6 +58,10 @@ export default function App() {
       <Route
         path="/explorer"
         element={character ? <ExplorerPage character={character} /> : <Navigate to="/" replace />}
+      />
+      <Route
+        path="/seller"
+        element={character ? <SellerPage character={character} /> : <Navigate to="/" replace />}
       />
       <Route
         path="/reactions"

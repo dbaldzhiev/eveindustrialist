@@ -383,6 +383,25 @@ export async function fetchCacheStatus(): Promise<CacheStatus> {
   return data;
 }
 
+export interface SellerItem {
+  type_id:        number;
+  name:           string;
+  original_price: number;
+  undercut_price: number;
+}
+
+export interface SellerResult {
+  items: SellerItem[];
+}
+
+export async function fetchSellerPrices(rawText: string, regionId: number): Promise<SellerResult> {
+  const { data } = await api.post<SellerResult>("/api/market/seller", { 
+    raw_text: rawText,
+    region_id: regionId
+  });
+  return data;
+}
+
 export async function refreshEsi(): Promise<void> {
   await api.post("/api/esi/refresh");
 }

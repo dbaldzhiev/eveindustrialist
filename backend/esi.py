@@ -8,6 +8,7 @@ Auth:     /characters/{id}/blueprints/
           /characters/{id}/assets/
 """
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import httpx
 from database import (
     get_db, _chunk,
@@ -53,7 +54,7 @@ def _esi_get(path: str, token: str | None = None, params: dict | None = None) ->
     return resp.json()
 
 
-def _esi_get_paged(path: str, token: str | None = None) -> list:
+def _esi_get_paged(path: str, token: str | None = None, params: dict | None = None) -> list:
     """Fetch all pages of a paginated ESI endpoint."""
     headers = {"Accept": "application/json"}
     if token:
@@ -65,7 +66,7 @@ def _esi_get_paged(path: str, token: str | None = None) -> list:
             resp = client.get(
                 f"{BASE_URL}{path}",
                 headers=headers,
-                params={"datasource": DATASOURCE, "page": page},
+                params={"datasource": DATASOURCE, "page": page, **(params or {})},
             )
             resp.raise_for_status()
             data = resp.json()
@@ -337,6 +338,35 @@ def resolve_location_names(
                     names[sid] = f"Player Structure #{sid}"
 
     return names
+
+
+def get_realtime_market_prices(type_ids: list[int], region_id: int) -> dict[int, dict]:
+    """
+    Fetch real-time minimum sell prices from ESI for a list of type_ids.
+    Returns {type_id: {"sell": float}}.
+    """
+    if not type_ids:
+        return {}
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(_fetch_min_sell_price, tid, region_id): tid for tid in type_ids}
+        for future in as_completed(futures):
+            tid = futures[future]
+            try:
+                min_sell = future.result()
+                results[tid] = {"sell": min_sell}
+            except Exception:
+                results[tid] = {"sell": 0.0}
+    return results
+
+
+def _fetch_min_sell_price(type_id: int, region_id: int) -> float:
+    """Fetch all sell orders for a type and return the minimum price."""
+    orders = _esi_get_paged(f"/markets/{region_id}/orders/", params={"order_type": "sell", "type_id": type_id})
+    if not orders:
+        return 0.0
+    return min(float(o["price"]) for o in orders)
 
 
 def get_character_assets(character_id: int, access_token: str,

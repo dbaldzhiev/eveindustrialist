@@ -77,7 +77,7 @@ def _fetch_from_fuzzwork(type_ids: list[int], region_id: int) -> dict[int, dict]
             for tid_str, prices in resp.json().items():
                 result[int(tid_str)] = {
                     "buy":  float(prices["buy"]["percentile"]  or 0),
-                    "sell": float(prices["sell"]["percentile"] or 0),
+                    "sell": float(prices["sell"]["min"]        or 0),
                 }
         except Exception:
             for tid in batch:

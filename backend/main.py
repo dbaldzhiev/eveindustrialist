@@ -1,4 +1,6 @@
 import os
+import math
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Cookie, HTTPException, Query
@@ -23,7 +25,7 @@ from database import (
     get_plan_items, add_plan_item, update_plan_item, remove_plan_item,
     get_invention_variants, get_reaction_bp_ids,
     get_blueprint_required_skills_batch, get_cached_all_skills_for_characters,
-    get_active_job_blueprint_ids,
+    get_active_job_blueprint_ids, get_type_id_by_name,
     _chunk,
 )
 from auth import (
@@ -34,6 +36,7 @@ from esi import (
     get_character_blueprints, get_adjusted_prices, get_manufacturing_cost_index,
     get_character_skills, get_industry_skill_levels,
     get_character_jobs, get_character_assets,
+    get_realtime_market_prices,
     INDUSTRY_SKILL_IDS, MFG_ACTIVITIES, RESEARCH_ACTIVITIES, REACTION_ACTIVITIES,
     ACTIVITY_NAMES, resolve_location_names,
 )
@@ -50,17 +53,16 @@ MARKET_HUBS = [
     {"region_id": 10000042, "name": "Metropolis (Hek)"},
 ]
 
-# T2 Invention Decryptors
+# T2 Invention Decryptors (Standard)
 DECRYPTORS = [
-    {"name": "None",       "type_id": None,  "prob_mult": 1.0, "me_mod": 0,  "te_mod": 0,  "runs_mod": 0},
-    {"name": "Symmetry",   "type_id": 34205, "prob_mult": 1.0, "me_mod": 1,  "te_mod": -1, "runs_mod": 0},
-    {"name": "Parity",     "type_id": 34201, "prob_mult": 1.5, "me_mod": 1,  "te_mod": -1, "runs_mod": 0},
-    {"name": "Augator",    "type_id": 34202, "prob_mult": 0.6, "me_mod": 4,  "te_mod": -1, "runs_mod": 0},
-    {"name": "Incunabula", "type_id": 34203, "prob_mult": 1.2, "me_mod": -2, "te_mod": 1,  "runs_mod": 1},
-    {"name": "Optimant",   "type_id": 34204, "prob_mult": 1.9, "me_mod": -2, "te_mod": 1,  "runs_mod": 1},
-    {"name": "Esoteric",   "type_id": 34206, "prob_mult": 0.6, "me_mod": 2,  "te_mod": -1, "runs_mod": 4},
-    {"name": "Occult",     "type_id": 34207, "prob_mult": 1.2, "me_mod": -1, "te_mod": 2,  "runs_mod": 3},
-    {"name": "Kamikaze",   "type_id": 34208, "prob_mult": 1.1, "me_mod": -3, "te_mod": 5,  "runs_mod": 9},
+    {"name": "None",                   "type_id": None,  "prob_mult": 1.0,  "me_mod": 0,  "te_mod": 0,  "runs_mod": 0},
+    {"name": "Accelerated Control",    "type_id": 34201, "prob_mult": 1.2,  "me_mod": -2, "te_mod": 2,  "runs_mod": 2},
+    {"name": "Augmentation",           "type_id": 34202, "prob_mult": 0.59, "me_mod": 2,  "te_mod": 2,  "runs_mod": 9},
+    {"name": "Optimized Attainment",   "type_id": 34203, "prob_mult": 1.9,  "me_mod": 1,  "te_mod": -2, "runs_mod": 4},
+    {"name": "Optimized Augmentation", "type_id": 34204, "prob_mult": 0.9,  "me_mod": 3,  "te_mod": 2,  "runs_mod": 7},
+    {"name": "Parity",                 "type_id": 34205, "prob_mult": 1.5,  "me_mod": 1,  "te_mod": 2,  "runs_mod": 3},
+    {"name": "Process",                "type_id": 34206, "prob_mult": 1.1,  "me_mod": 1,  "te_mod": 6,  "runs_mod": 0},
+    {"name": "Symmetry",               "type_id": 34207, "prob_mult": 1.0,  "me_mod": 1,  "te_mod": 2,  "runs_mod": 2},
 ]
 
 
@@ -149,6 +151,23 @@ def _calc_profits_for_bps(
         else:
             test_decryptors = [DECRYPTORS[0]] # "None"
 
+        # Get base BPC counts for invention
+        base_bpc_counts = {}
+        if primary_id:
+            for cid in get_group_character_ids(primary_id):
+                try:
+                    for bp in get_character_blueprints(cid, get_access_token(cid)):
+                        if bp.get("quantity") != -1: # BPC
+                            tid = bp["type_id"]
+                            if tid not in base_bpc_counts: base_bpc_counts[tid] = {"count": 0, "runs": 0}
+                            base_bpc_counts[tid]["count"] += 1
+                            base_bpc_counts[tid]["runs"] += bp.get("runs", 0)
+                except Exception: pass
+
+        # Get invention materials for all source blueprints
+        source_ids = list({v["base_bp_id"] for v in variants})
+        invent_data = get_blueprints_data_batch(source_ids, activity_id=8)
+
         # Build "Potential" BPCs for calculation
         for var in variants:
             for d in test_decryptors:
@@ -162,6 +181,9 @@ def _calc_profits_for_bps(
                     "is_bpo":         False,
                     "is_invention":   True,
                     "decryptor":      d,
+                    "base_probability": var.get("probability", 0),
+                    "invent_materials": invent_data.get(var["base_bp_id"], {}).get("materials", []),
+                    "base_bpc_info":    base_bpc_counts.get(var["base_bp_id"], {"count": 0, "runs": 0}),
                 })
         all_calc_bps = invention_bps
     elif mode == "copy":
@@ -203,6 +225,11 @@ def _calc_profits_for_bps(
             all_type_ids.update(m["type_id"] for m in data["materials"])
             all_type_ids.update(p["type_id"] for p in data["products"])
 
+    if mode == "invent":
+        for bp in all_calc_bps:
+            for m in bp.get("invent_materials", []):
+                all_type_ids.add(m["type_id"])
+
     if not all_type_ids:
         return []
 
@@ -212,16 +239,50 @@ def _calc_profits_for_bps(
     category_map    = get_type_categories_batch(list(all_type_ids))
 
     if mode == "copy":
+        # Aggregate BPOs by type_id to show all owners
+        bpo_agg: dict[int, dict] = {}
+        reaction_ids = set(get_reaction_bp_ids())
+        for bp in char_bps:
+            if bp.get("quantity") == -1 and bp["type_id"] not in reaction_ids:
+                tid = bp["type_id"]
+                if tid not in bpo_agg:
+                    bpo_agg[tid] = {
+                        "type_id": tid,
+                        "type_name": bp["type_name"],
+                        "me": bp["me"], "te": bp["te"],
+                        "character_ids": set()
+                    }
+                if bp.get("character_id"):
+                    bpo_agg[tid]["character_ids"].add(bp["character_id"])
+
+        # Check matching BPCs in inventory
+        bpc_inventory: dict[int, list[dict]] = {}
+        if primary_id:
+            char_ids = get_group_character_ids(primary_id)
+            for cid in char_ids:
+                try:
+                    for bp in get_character_blueprints(cid, get_access_token(cid)):
+                        if bp.get("quantity") != -1: # It's a BPC
+                            tid = bp["type_id"]
+                            if tid not in bpc_inventory: bpc_inventory[tid] = []
+                            bpc_inventory[tid].append(bp)
+                except Exception: pass
+
         results = []
-        for bp in all_calc_bps:
-            data = sde_data.get(bp["type_id"], {})
+        for tid, agg in bpo_agg.items():
+            data = sde_data.get(tid, {})
             product_id = data["products"][0]["type_id"] if data.get("products") else 0
+            
+            matching_bpcs = bpc_inventory.get(tid, [])
+            # Collect unique character IDs who own BPCs for this blueprint
+            bpc_char_ids = list({b["character_id"] for b in matching_bpcs if b.get("character_id")})
+
             d = {
-                "blueprint_type_id": bp["type_id"],
-                "blueprint_name":    bp["type_name"],
+                "blueprint_type_id": tid,
+                "blueprint_name":    agg["type_name"],
                 "product_type_id":   product_id,
                 "product_name":      data["products"][0]["name"] if data.get("products") else "Unknown",
-                "me": bp["me"], "te": bp["te"],
+                "me": agg["me"], "te": agg["te"],
                 "runs": 1,
                 "is_bpo": True,
                 "category_name": category_map.get(product_id, "Unknown"),
@@ -229,11 +290,11 @@ def _calc_profits_for_bps(
                 "revenue": 0, "profit": 0, "margin_pct": 0,
                 "isk_per_hour": 0, "sell_price": 0, "product_quantity": 0,
                 "materials": [],
+                "character_ids": list(agg["character_ids"]),
+                "bpc_character_ids": bpc_char_ids,
+                "bpc_count": len(matching_bpcs),
+                "bpc_total_runs": sum(b.get("runs", 0) for b in matching_bpcs)
             }
-            if bp.get("character_id"): d["character_ids"] = [bp["character_id"]]
-            matching_bpcs = bpc_inventory.get(bp["type_id"], [])
-            d["bpc_count"] = len(matching_bpcs)
-            d["bpc_total_runs"] = sum(b.get("runs", 0) for b in matching_bpcs)
             results.append(d)
         return results
 
@@ -310,6 +371,15 @@ def _calc_profits_for_bps(
             # Initialize aggregate runs: BPOs use indicators, BPCs will sum actual runs
             if not is_bpo:
                 aggregated_bps[key]["runs"] = 0
+            
+            # Preserve invention metadata if present
+            if bp.get("is_invention"):
+                aggregated_bps[key]["is_invention"] = True
+                aggregated_bps[key]["decryptor"] = bp.get("decryptor")
+                aggregated_bps[key]["base_probability"] = bp.get("base_probability")
+                aggregated_bps[key]["invent_materials"] = bp.get("invent_materials")
+                aggregated_bps[key]["base_bpc_info"] = bp.get("base_bpc_info")
+                aggregated_bps[key]["source_type_id"] = bp.get("source_type_id")
 
         if bp.get("character_id"):
             cid = bp["character_id"]
@@ -370,10 +440,27 @@ def _calc_profits_for_bps(
             d["category_name"] = category_map.get(d["product_type_id"], "Unknown")
             if bp.get("character_ids"):
                 d["character_ids"] = bp["character_ids"]
-            if bp.get("is_invention"):
+            if bp.get("is_invention") and bp.get("decryptor"):
                 d["is_invention"] = True
                 d["decryptor_name"] = bp["decryptor"]["name"]
-            
+                
+                # Attach priced invention materials and metadata
+                inv_mats = []
+                inv_cost = 0.0
+                if bp.get("invent_materials"):
+                    for m in bp["invent_materials"]:
+                        price = market_prices.get(m["type_id"], {}).get(settings.material_order_type, 0.0)
+                        line_cost = m["quantity"] * price
+                        inv_cost += line_cost
+                        inv_mats.append({
+                            "type_id": m["type_id"], "name": m["name"],
+                            "quantity": m["quantity"], "unit_price": price, "total_cost": line_cost
+                        })
+                d["invent_materials"] = inv_mats
+                d["invent_cost"]      = inv_cost
+                d["base_probability"] = bp.get("base_probability", 0)
+                d["base_bpc_info"]    = bp.get("base_bpc_info", {})
+
             if mode == "copy":
                 matching_bpcs = bpc_inventory.get(bp["type_id"], [])
                 d["bpc_count"] = len(matching_bpcs)
@@ -673,6 +760,92 @@ def blueprint_detail(
     d["category_name"] = get_type_categories_batch(list(all_type_ids)).get(d["product_type_id"], "Unknown")
     return d
 
+
+class SellerInput(BaseModel):
+    raw_text: str
+    region_id: int | None = 10000002
+
+@app.post("/api/market/seller")
+def market_seller(body: SellerInput, session: str | None = Cookie(None)):
+    """
+    Parse a list of items (TypeIDs or Name + Price), fetch real-time sell prices
+    for the specified region, and return undercut prices.
+    """
+    get_current_character(session) # Auth check
+
+    region_id = body.region_id or 10000002
+
+    lines = body.raw_text.strip().split("\n")
+    type_ids = []
+    
+    # We'll store either tid or name to resolve later
+    to_resolve = []
+
+    for line in lines:
+        line = line.strip()
+        if not line: continue
+        
+        # 1. Try TypeID at the start
+        match_tid = re.match(r"^(\d{2,10})\b", line)
+        if match_tid:
+            tid = int(match_tid.group(1))
+            type_ids.append(tid)
+            to_resolve.append({"type_id": tid})
+            continue
+
+        # 2. Try [Name] [Price] format
+        # Regex: captures everything up to the last segment that looks like a price.
+        # We look for a space followed by a price-like string at the end of the line.
+        # Price-like: can contain digits, commas, and a decimal point.
+        match_name_price = re.match(r"^(.*?)\s+([\d,]*\.?\d+)$", line)
+        if match_name_price:
+            name = match_name_price.group(1).strip()
+            to_resolve.append({"name": name})
+            continue
+        
+        # 3. Fallback: treat the whole line as a name
+        to_resolve.append({"name": line})
+
+    # Resolve names to typeIDs
+    final_type_ids = []
+    for item in to_resolve:
+        if "type_id" in item:
+            final_type_ids.append(item["type_id"])
+        elif "name" in item:
+            tid = get_type_id_by_name(item["name"])
+            if tid:
+                item["type_id"] = tid
+                final_type_ids.append(tid)
+
+    if not final_type_ids:
+        return {"items": []}
+
+    # Fetch real-time ESI DATA for the specified region
+    prices = get_realtime_market_prices(final_type_ids, region_id)
+    names = get_type_names_batch(final_type_ids)
+
+    results = []
+    for item in to_resolve:
+        tid = item.get("type_id")
+        if not tid: continue
+
+        p = prices.get(tid, {}).get("sell", 0)
+        
+        undercut = 0
+        if p > 0:
+            magnitude = math.floor(math.log10(p))
+            undercut_unit = 10**(magnitude - 3)
+            undercut_unit = max(0.01, undercut_unit)
+            undercut = round(max(0.01, p - undercut_unit), 2)
+        
+        results.append({
+            "type_id": tid,
+            "name": names.get(tid, "Unknown"),
+            "original_price": p,
+            "undercut_price": undercut,
+        })
+
+    return {"items": results}
 
 # ---------------------------------------------------------------------------
 # My Blueprints (aggregated from all characters in the group)

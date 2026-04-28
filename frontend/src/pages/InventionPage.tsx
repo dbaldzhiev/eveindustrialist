@@ -49,7 +49,7 @@ export default function InventionPage({ character }: Props) {
   // Quick filters
   const [showProfitable, setShowProfitable]     = useState(true);
   const [showUnprofitable, setShowUnprofitable] = useState(true);
-  const [showGroups, setShowGroups]             = useState(true);
+  const [showGroups, setShowGroups]             = useState(false);
 
   // Fetch global settings and auto-calculate
   useEffect(() => {

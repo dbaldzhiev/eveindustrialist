@@ -76,6 +76,7 @@ TABLE_SQL = {
             activityID      INTEGER,
             productTypeID   INTEGER,
             quantity        INTEGER,
+            probability     REAL,
             PRIMARY KEY (typeID, activityID, productTypeID)
         )
     """,
@@ -216,7 +217,7 @@ def import_blueprints(conn: sqlite3.Connection, rows: list[dict]):
                 mat_rows.append((bp_id, act_id, mat["typeID"], mat["quantity"]))
 
             for prod in act.get("products", []):
-                prod_rows.append((bp_id, act_id, prod["typeID"], prod["quantity"]))
+                prod_rows.append((bp_id, act_id, prod["typeID"], prod["quantity"], prod.get("probability")))
 
             for skill in act.get("skills", []):
                 skill_rows.append((bp_id, act_id, skill["typeID"], skill["level"]))
@@ -232,7 +233,7 @@ def import_blueprints(conn: sqlite3.Connection, rows: list[dict]):
     )
     conn.executemany(
         "INSERT OR IGNORE INTO industryActivityProducts"
-        " (typeID, activityID, productTypeID, quantity) VALUES (?,?,?,?)",
+        " (typeID, activityID, productTypeID, quantity, probability) VALUES (?,?,?,?,?)",
         prod_rows,
     )
     conn.executemany(

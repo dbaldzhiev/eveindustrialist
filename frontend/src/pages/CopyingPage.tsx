@@ -1,37 +1,49 @@
 import { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
 import CharacterSkillBadges from "../components/CharacterSkillBadges";
+import { OwnerPortraits } from "../components/OwnerPortraits";
 import { fetchBlueprints, fetchAppSettings } from "../api/client";
-import { DEFAULT_SETTINGS, StatCard, Spinner } from "./DashboardPage";
+import { useCharacterSkillData } from "../hooks/useEligibleCharacters";
+import { DEFAULT_SETTINGS, Spinner } from "./DashboardPage";
 import type { BlueprintResult, Character, Settings } from "../types";
 
 interface Props {
   character: Character;
 }
 
+type SortKey = "blueprint_name" | "bpc_count" | "bpc_total_runs";
+
 export default function CopyingPage({ character }: Props) {
-  const [settings, setSettings]     = useState<Settings>(DEFAULT_SETTINGS);
   const [blueprints, setBlueprints] = useState<BlueprintResult[]>([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
 
-  // Filters
+  // Character name mapping
+  const charSkillData = useCharacterSkillData();
+  const charNameMap = useMemo(() =>
+    new Map(charSkillData.map(c => [c.character_id, c.character_name])),
+  [charSkillData]);
+
+  // Filters & Sort
   const [filterWithBpcs, setFilterWithBpcs] = useState(true);
   const [filterNoBpcs, setFilterNoBpcs]     = useState(true);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [sortKey, setSortKey]               = useState<SortKey>("blueprint_name");
+  const [sortDir, setSortDir]               = useState<"asc" | "desc">("asc");
 
   useEffect(() => {
     async function init() {
       try {
         const appSettings = await fetchAppSettings();
-        const s: Settings = {
-          ...DEFAULT_SETTINGS,
-          solar_system_id: appSettings.default_system_id,
-          price_region_id: appSettings.default_price_region,
-        };
-        setSettings(s);
+        const s_id = appSettings.default_system_id;
 
-        if (s.solar_system_id) {
+        if (s_id) {
+          // We still need a full settings object for the API, even if we don't store it in state
+          const s: Settings = {
+            ...DEFAULT_SETTINGS,
+            solar_system_id: s_id,
+            price_region_id: appSettings.default_price_region,
+          };
           const results = await fetchBlueprints(s, false, "copy");
           setBlueprints(results);
         } else {
@@ -52,20 +64,43 @@ export default function CopyingPage({ character }: Props) {
     return Array.from(cats).sort();
   }, [blueprints]);
 
-  const filtered = useMemo(() => {
-    return blueprints.filter(bp => {
+  const sortedAndFiltered = useMemo(() => {
+    let list = blueprints.filter(bp => {
       const hasBpcs = (bp.bpc_count || 0) > 0;
       if (hasBpcs && !filterWithBpcs) return false;
       if (!hasBpcs && !filterNoBpcs) return false;
       if (selectedCategories.length > 0 && bp.category_name && !selectedCategories.includes(bp.category_name)) return false;
       return true;
     });
-  }, [blueprints, filterWithBpcs, filterNoBpcs, selectedCategories]);
+
+    list.sort((a, b) => {
+      let valA = a[sortKey] ?? 0;
+      let valB = b[sortKey] ?? 0;
+
+      if (typeof valA === "string" && typeof valB === "string") {
+        return sortDir === "asc" ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      const numA = Number(valA);
+      const numB = Number(valB);
+      return sortDir === "asc" ? numA - numB : numB - numA;
+    });
+
+    return list;
+  }, [blueprints, filterWithBpcs, filterNoBpcs, selectedCategories, sortKey, sortDir]);
 
   const handleToggleCategory = (cat: string) => {
     setSelectedCategories(prev => 
       prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
     );
+  };
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
   };
 
   return (
@@ -113,18 +148,31 @@ export default function CopyingPage({ character }: Props) {
             <table className="w-full text-left text-sm border-collapse">
               <thead>
                 <tr className="bg-eve-bg/50 text-eve-muted text-[10px] uppercase tracking-wider font-bold border-b border-eve-border">
-                  <th className="px-4 py-3">Blueprint / Category</th>
+                  <th className="px-4 py-3 cursor-pointer hover:text-eve-text transition-colors" onClick={() => toggleSort("blueprint_name")}>
+                    Blueprint / Category {sortKey === "blueprint_name" && (sortDir === "asc" ? "↑" : "↓")}
+                  </th>
+                  <th className="px-4 py-3 text-center">BPO Owners</th>
                   <th className="px-4 py-3 text-right">ME / TE</th>
-                  <th className="px-4 py-3 text-right">Owned BPCs</th>
-                  <th className="px-4 py-3 text-right">Total BPC Runs</th>
+                  <th className="px-4 py-3 text-right cursor-pointer hover:text-eve-text transition-colors" onClick={() => toggleSort("bpc_count")}>
+                    Owned BPCs {sortKey === "bpc_count" && (sortDir === "asc" ? "↑" : "↓")}
+                  </th>
+                  <th className="px-4 py-3 text-center">BPC Owners</th>
+                  <th className="px-4 py-3 text-right cursor-pointer hover:text-eve-text transition-colors" onClick={() => toggleSort("bpc_total_runs")}>
+                    Total BPC Runs {sortKey === "bpc_total_runs" && (sortDir === "asc" ? "↑" : "↓")}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-eve-border/50">
-                {filtered.map(bp => (
+                {sortedAndFiltered.map(bp => (
                   <tr key={bp.blueprint_type_id} className="hover:bg-white/5 transition-colors">
                     <td className="px-4 py-3">
                       <div className="font-semibold text-eve-text">{bp.blueprint_name}</div>
                       <div className="text-[10px] text-eve-muted uppercase font-bold">{bp.category_name}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-center">
+                        <OwnerPortraits ids={bp.character_ids || []} nameMap={charNameMap} size={24} />
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right text-eve-muted">
                       <span className="text-blue-400">{bp.me}</span> / <span className="text-purple-400">{bp.te}</span>
@@ -132,7 +180,12 @@ export default function CopyingPage({ character }: Props) {
                     <td className={`px-4 py-3 text-right font-medium ${(bp.bpc_count || 0) > 0 ? "text-green-400" : "text-eve-muted"}`}>
                       {bp.bpc_count || 0}
                     </td>
-                    <td className="px-4 py-3 text-right text-eve-text">
+                    <td className="px-4 py-3">
+                      <div className="flex justify-center">
+                        <OwnerPortraits ids={bp.bpc_character_ids || []} nameMap={charNameMap} size={24} />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-eve-text font-mono">
                       {(bp.bpc_total_runs || 0).toLocaleString()}
                     </td>
                   </tr>

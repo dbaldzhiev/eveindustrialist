@@ -11,6 +11,7 @@ interface Props {
 const TABS = [
   { to: "/slots",     label: "Dashboard"    },
   { to: "/explorer",  label: "Explorer"     },
+  { to: "/seller",    label: "Seller"       },
   { to: "/dashboard", label: "To Build"     },
   { to: "/invention", label: "To Invent"    },
   { to: "/copying",   label: "To Copy"      },

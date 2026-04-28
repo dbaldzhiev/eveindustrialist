@@ -36,6 +36,20 @@ const TREND = {
   flat: { icon: "→", cls: "text-eve-muted/50" },
 } as const;
 
+function getTechColorClass(bpName: string, product_name: string) {
+  const name = (bpName + " " + product_name).toLowerCase();
+  // T3 Heuristics
+  const t3Keywords = ["proteus", "tengu", "legion", "loki", "confessor", "svipul", "jackdaw", "hecate", "subsystem"];
+  if (name.includes(" iii ") || name.endsWith(" iii") || name.includes(" iii blueprint") || t3Keywords.some(k => name.includes(k))) {
+    return "text-red-500";
+  }
+  // T2 Heuristics
+  if (name.includes(" ii ") || name.endsWith(" ii") || name.includes(" ii blueprint")) {
+    return "text-eve-orange";
+  }
+  return "text-eve-text";
+}
+
 export default function BlueprintTable({ blueprints, activity, showGroups }: Props) {
   const [sortKey, setSortKey]     = useState<SortKey>("profit");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
@@ -233,7 +247,7 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                       <td className="px-4 py-3">
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-eve-text group-hover:text-eve-orange transition-colors">
+                            <span className={`font-semibold group-hover:text-eve-orange transition-colors ${getTechColorClass(bp.blueprint_name, bp.product_name || "")}`}>
                               {cleanBpName}
                             </span>
                             <span className="text-[10px] bg-eve-bg px-1.5 py-0.5 rounded border border-eve-border text-eve-muted font-bold uppercase">
@@ -250,6 +264,11 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                       </td>
                       <td className="px-4 py-3 text-right text-eve-muted font-medium">
                         {bp.runs}
+                        {activity === "invent" && bp.base_bpc_info?.count > 0 && (
+                          <div className="text-[10px] text-green-400 font-bold">
+                            {bp.base_bpc_info.count} BPCs
+                          </div>
+                        )}
                       </td>
                       <td className={`px-4 py-3 text-right font-bold ${bp.profit > 0 ? "text-green-400" : "text-red-400"}`}>
                         {fmtISK(bp.profit)}
@@ -281,32 +300,63 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                                 const vEligible = activity ? (eligibilityMap.get(v.blueprint_type_id) ?? []) : [];
                                 return (
                                   <div key={`${v.blueprint_type_id}-${v.me}-${v.te}-${v.decryptor_name || ""}`} 
-                                       className="flex items-center justify-between bg-eve-surface/50 border border-eve-border/30 rounded px-3 py-2 text-xs">
-                                    <div className="flex flex-col gap-0.5">
-                                      <div className="flex items-center gap-2">
-                                        <span className={v.is_bpo ? "text-green-500 font-bold uppercase text-[9px]" : "text-yellow-500 font-bold uppercase text-[9px]"}>
-                                          {v.is_bpo ? "BPO" : "BPC"}
-                                        </span>
-                                        <span className="text-blue-400 text-[10px]">ME {v.me}</span>
-                                        <span className="text-purple-400 text-[10px]">TE {v.te}</span>
-                                        {v.decryptor_name && <span className="text-eve-orange text-[10px]">D: {v.decryptor_name}</span>}
-                                        <span className="text-eve-muted">· {v.runs} runs</span>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-6">
-                                      <div className="text-right">
-                                        <div className={`font-bold ${v.profit > 0 ? "text-green-400" : "text-red-400"}`}>{fmtISK(v.profit)}</div>
-                                        <div className="text-[10px] text-eve-muted">{PCT_FORMAT.format(v.margin_pct)}% margin</div>
-                                      </div>
-                                      <div className="text-right w-24">
-                                        <div className="font-medium text-eve-text">{fmtISK(v.isk_per_hour)}/h</div>
-                                      </div>
-                                      {activity && (
-                                        <div className="w-20 flex justify-center">
-                                          <CharacterMiniPortraits characters={vEligible} size={18} />
+                                       className="flex flex-col bg-eve-surface/50 border border-eve-border/30 rounded px-3 py-2 text-xs">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex flex-col gap-0.5">
+                                        <div className="flex items-center gap-2">
+                                          <span className={v.is_bpo ? "text-green-500 font-bold uppercase text-[9px]" : "text-yellow-500 font-bold uppercase text-[9px]"}>
+                                            {v.is_bpo ? "BPO" : "BPC"}
+                                          </span>
+                                          <span className="text-blue-400 text-[10px]">ME {v.me}</span>
+                                          <span className="text-purple-400 text-[10px]">TE {v.te}</span>
+                                          {v.decryptor_name && <span className="text-eve-orange text-[10px]">D: {v.decryptor_name}</span>}
+                                          <span className="text-eve-muted">· {v.runs} runs</span>
                                         </div>
-                                      )}
+                                      </div>
+                                      <div className="flex items-center gap-6">
+                                        <div className="text-right">
+                                          <div className={`font-bold ${v.profit > 0 ? "text-green-400" : "text-red-400"}`}>{fmtISK(v.profit)}</div>
+                                          <div className="text-[10px] text-eve-muted">{PCT_FORMAT.format(v.margin_pct)}% margin</div>
+                                        </div>
+                                        <div className="text-right w-24">
+                                          <div className="font-medium text-eve-text">{fmtISK(v.isk_per_hour)}/h</div>
+                                        </div>
+                                        {activity && (
+                                          <div className="w-20 flex justify-center">
+                                            <CharacterMiniPortraits characters={vEligible} size={18} />
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
+
+                                    {activity === "invent" && (
+                                      <div className="border-t border-eve-border/20 pt-2 mt-1 grid grid-cols-2 gap-4">
+                                        <div>
+                                          <div className="text-[9px] uppercase text-eve-muted font-bold mb-1">Invention Materials</div>
+                                          <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                            {v.invent_materials?.map((m: any) => (
+                                              <span key={m.type_id} className="text-[10px] text-eve-text whitespace-nowrap">
+                                                {m.quantity}x {m.name}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                        <div className="flex justify-end items-center gap-4">
+                                          <div className="text-right">
+                                            <div className="text-[9px] uppercase text-eve-muted font-bold">Source BPCs</div>
+                                            <div className={`text-[10px] font-bold ${v.base_bpc_info?.count > 0 ? "text-green-400" : "text-red-400"}`}>
+                                              {v.base_bpc_info?.count || 0} ({v.base_bpc_info?.runs || 0} runs)
+                                            </div>
+                                          </div>
+                                          <div className="text-right">
+                                            <div className="text-[9px] uppercase text-eve-muted font-bold">Success</div>
+                                            <div className="text-[10px] font-bold text-blue-400">
+                                              {Math.round((v.base_probability || 0) * 100)}%
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -328,7 +378,7 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                     <td className="px-4 py-3">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-eve-text group-hover:text-eve-orange transition-colors">
+                          <span className={`font-semibold group-hover:text-eve-orange transition-colors ${getTechColorClass(bp.blueprint_name, bp.product_name)}`}>
                             {cleanBpName}
                           </span>
                           {bp.character_ids && bp.character_ids.length > 0 && (
@@ -349,6 +399,11 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                     </td>
                     <td className="px-4 py-3 text-right text-eve-muted font-medium">
                       {bp.runs}
+                      {activity === "invent" && bp.base_bpc_info?.count > 0 && (
+                        <div className="text-[10px] text-green-400 font-bold">
+                          {bp.base_bpc_info.count} BPCs
+                        </div>
+                      )}
                     </td>
                     <td className={`px-4 py-3 text-right font-bold ${bp.profit > 0 ? "text-green-400" : "text-red-400"}`}>
                       {fmtISK(bp.profit)}
@@ -421,6 +476,66 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                         {/* Market data row */}
                         {bp.market_stats && bp.market_stats.vol_7d > 0 && (
                           <MarketStatsExpanded stats={bp.market_stats} />
+                        )}
+
+                        {/* Invention data row */}
+                        {activity === "invent" && (
+                          <div className="mt-8 pt-6 border-t border-eve-border/30 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                             {/* Invention Materials */}
+                             <div className="space-y-4">
+                               <h4 className="text-[10px] font-bold uppercase tracking-widest text-eve-muted border-b border-eve-border/30 pb-1 flex justify-between items-center">
+                                 <span>Invention Materials</span>
+                                 <span className="text-eve-orange">{fmtISK(bp.invent_cost || 0)}</span>
+                               </h4>
+                               <div className="space-y-1.5">
+                                 {bp.invent_materials?.map((mat: any) => (
+                                   <div key={mat.type_id} className="flex justify-between text-xs group/mat">
+                                     <span className="text-eve-text group-hover/mat:text-eve-orange transition-colors">
+                                       {mat.name}
+                                     </span>
+                                     <div className="flex gap-4">
+                                       <span className="text-eve-muted">
+                                         {mat.quantity.toLocaleString()} × {fmtISK(mat.unit_price)}
+                                       </span>
+                                       <span className="text-eve-text font-medium min-w-[100px] text-right">
+                                         {fmtISK(mat.total_cost)}
+                                       </span>
+                                     </div>
+                                   </div>
+                                 ))}
+                                 {(!bp.invent_materials || bp.invent_materials.length === 0) && (
+                                   <div className="text-eve-muted italic text-xs">No invention materials data found.</div>
+                                 )}
+                               </div>
+                             </div>
+
+                             {/* Base BPC Info */}
+                             <div className="space-y-4">
+                               <h4 className="text-[10px] font-bold uppercase tracking-widest text-eve-muted border-b border-eve-border/30 pb-1">
+                                 Source Blueprint Status
+                               </h4>
+                               <div className="bg-eve-bg/50 border border-eve-border/30 rounded p-4 space-y-4">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-eve-muted uppercase font-bold">Owned Source BPCs</span>
+                                    <span className={`text-sm font-bold ${bp.base_bpc_info?.count > 0 ? "text-green-400" : "text-red-400"}`}>
+                                      {bp.base_bpc_info?.count || 0}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs text-eve-muted uppercase font-bold">Total Source Runs</span>
+                                    <span className="text-sm font-bold text-eve-text">
+                                      {bp.base_bpc_info?.runs || 0}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between border-t border-eve-border/20 pt-4 mt-2">
+                                    <span className="text-xs text-eve-muted uppercase font-bold">Base Success Chance</span>
+                                    <span className="text-sm font-bold text-blue-400">
+                                      {Math.round((bp.base_probability || 0) * 100)}%
+                                    </span>
+                                  </div>
+                               </div>
+                             </div>
+                          </div>
                         )}
                       </td>
                     </tr>

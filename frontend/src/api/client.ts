@@ -264,6 +264,7 @@ export async function addPlanItem(
     runs: number;
     me:   number;
     te:   number;
+    character_id?: number | null;
   },
 ): Promise<PlanItem> {
   const { data } = await api.post<PlanItem>(`/api/plans/${planId}/items`, body);

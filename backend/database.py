@@ -182,7 +182,8 @@ def init_db():
             runs              INTEGER NOT NULL DEFAULT 1,
             me                INTEGER NOT NULL DEFAULT 0,
             te                INTEGER NOT NULL DEFAULT 0,
-            status            TEXT    NOT NULL DEFAULT 'active'
+            status            TEXT    NOT NULL DEFAULT 'active',
+            character_id      INTEGER
         );
     """)
     conn.commit()
@@ -215,12 +216,14 @@ def _migrate(conn: sqlite3.Connection):
     _add_column_if_missing(conn, "asset_cache", "is_container",  "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(conn, "asset_cache", "location_type", "TEXT    NOT NULL DEFAULT ''")
 
-    # plan_items: manufacturing status
+    # plan_items: manufacturing status and owner
     _add_column_if_missing(conn, "plan_items", "status", "TEXT NOT NULL DEFAULT 'active'")
+    _add_column_if_missing(conn, "plan_items", "character_id", "INTEGER")
 
 
     migrations = [
         "UPDATE sessions SET primary_character_id = character_id WHERE primary_character_id IS NULL",
+        "UPDATE plan_items SET character_id = (SELECT primary_character_id FROM plans WHERE plans.id = plan_items.plan_id) WHERE character_id IS NULL",
     ]
     for sql in migrations:
         try:
@@ -1074,17 +1077,19 @@ def delete_plan(primary_character_id: int, plan_id: int) -> bool:
 def get_plan_items(plan_id: int) -> list[dict]:
     return _query("SELECT * FROM plan_items WHERE plan_id = ? ORDER BY id", (plan_id,))
 
-
 def add_plan_item(plan_id: int, blueprint_type_id: int, blueprint_name: str,
                    product_type_id: int, product_name: str,
-                   runs: int, me: int, te: int, status: str = "active") -> dict:
+                   runs: int, me: int, te: int, status: str = "active",
+                   character_id: int | None = None) -> dict:
     conn = get_db()
     try:
         cur = conn.execute(
             "INSERT INTO plan_items (plan_id, blueprint_type_id, blueprint_name, "
-            "product_type_id, product_name, runs, me, te, status) VALUES (?,?,?,?,?,?,?,?,?)",
-            (plan_id, blueprint_type_id, blueprint_name, product_type_id, product_name, runs, me, te, status),
+            "product_type_id, product_name, runs, me, te, status, character_id) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (plan_id, blueprint_type_id, blueprint_name, product_type_id, product_name, runs, me, te, status, character_id),
         )
+
         conn.commit()
         return dict(conn.execute("SELECT * FROM plan_items WHERE id = ?", (cur.lastrowid,)).fetchone())
     finally:

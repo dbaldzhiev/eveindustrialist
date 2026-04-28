@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Navbar from "../components/Navbar";
 import { fetchSlots } from "../api/client";
 import { useRefresh } from "../context/RefreshContext";
+import { useCharacterSkillData } from "../hooks/useEligibleCharacters";
+import { OwnerPortraits } from "../components/OwnerPortraits";
 import type { Character, CharacterSlots, ActiveJob } from "../types";
 
 interface Props {
@@ -51,7 +53,7 @@ function JobRow({ job }: { job: ActiveJob }) {
   );
 }
 
-function CharacterCard({ slots }: { slots: CharacterSlots }) {
+function CharacterCard({ slots, nameMap }: { slots: CharacterSlots; nameMap: Map<number, string> }) {
   const freeMfg      = slots.mfg_max - slots.mfg_used;
   const freeResearch = slots.research_max - slots.research_used;
   const freeReaction = slots.reaction_max - slots.reaction_used;
@@ -131,8 +133,13 @@ function CharacterCard({ slots }: { slots: CharacterSlots }) {
                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs text-eve-text truncate">{s.product_name}</div>
-                  <div className="text-xs text-eve-muted">{s.blueprint_name}</div>
+                  <div className="flex items-center gap-1.5 truncate">
+                    <div className="text-xs text-eve-text truncate">{s.product_name}</div>
+                    {s.character_ids && s.character_ids.length > 0 && (
+                      <OwnerPortraits ids={s.character_ids} nameMap={nameMap} size={12} />
+                    )}
+                  </div>
+                  <div className="text-xs text-eve-muted truncate">{s.blueprint_name}</div>
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-xs text-green-400 font-mono">{isk(s.profit)} ISK</div>
@@ -154,6 +161,11 @@ function CharacterCard({ slots }: { slots: CharacterSlots }) {
 }
 
 export default function SlotsPage({ character }: Props) {
+  const charSkillData = useCharacterSkillData();
+  const charNameMap = useMemo(() =>
+    new Map(charSkillData.map(c => [c.character_id, c.character_name])),
+  [charSkillData]);
+
   const [slots, setSlots]     = useState<CharacterSlots[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
@@ -194,7 +206,7 @@ export default function SlotsPage({ character }: Props) {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
             {slots.map((s) => (
-              <CharacterCard key={s.character_id} slots={s} />
+              <CharacterCard key={s.character_id} slots={s} nameMap={charNameMap} />
             ))}
           </div>
         )}

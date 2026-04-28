@@ -1320,6 +1320,7 @@ class PlanItemIn(BaseModel):
     runs:              int  = 1
     me:                int  = 0
     te:                int  = 0
+    character_id:      int | None = None
 
 
 class PlanItemUpdateIn(BaseModel):
@@ -1373,6 +1374,7 @@ def add_to_plan(plan_id: int, body: PlanItemIn, session: str | None = Cookie(Non
         body.blueprint_type_id, body.blueprint_name,
         body.product_type_id, body.product_name,
         body.runs, body.me, body.te,
+        character_id=body.character_id
     )
 
 
@@ -1688,6 +1690,7 @@ def plan_stats(
                 "runs":           item["runs"],
                 "profit":         round(result.profit, 2),
                 "isk_per_hour":   round(result.isk_per_hour, 2),
+                "character_id":   item.get("character_id"),
             })
 
     total_cost   = total_mat_cost + total_job_cost

@@ -2,8 +2,9 @@ import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import Navbar from "../components/Navbar";
 import { useEligibilityMap, useCharacterSkillData, type EligibleChar } from "../hooks/useEligibleCharacters";
 import { CharacterMiniPortraits } from "../components/CharacterMiniPortraits";
+import { OwnerPortraits } from "../components/OwnerPortraits";
 import {
-  fetchPlans, createPlan, deletePlan,
+  fetchPlans, createPlan, deletePlan, fetchPlanRename,
   fetchPlanItems, addPlanItem, deletePlanItem,
   fetchPlanStats, fetchPlanShoppingList,
   searchBlueprintsApi, fetchAppSettings,
@@ -166,7 +167,13 @@ function AddBlueprintRow({ planId, onAdded }: { planId: number; onAdded: () => v
 // ---------------------------------------------------------------------------
 // Plan detail panel
 // ---------------------------------------------------------------------------
-function PlanDetail({ plan, onClose, onRename, onDelete }: { plan: Plan; onClose: () => void; onRename: (p: Plan) => void; onDelete: (id: number) => void }) {
+function PlanDetail({ plan, charNameMap, onClose, onRename, onDelete }: { 
+  plan: Plan; 
+  charNameMap: Map<number, string>;
+  onClose: () => void; 
+  onRename: (p: Plan) => void; 
+  onDelete: (id: number) => void;
+}) {
   const [items, setItems]               = useState<PlanItem[]>([]);
   const [stats, setStats]               = useState<PlanStats | null>(null);
   const [shopping, setShopping]         = useState<PlanShoppingResult | null>(null);
@@ -255,6 +262,7 @@ function PlanDetail({ plan, onClose, onRename, onDelete }: { plan: Plan; onClose
           product_type_id:   item.product_type_id,
           product_name:      item.product_name,
           runs: item.runs, me: item.me, te: item.te,
+          character_id: item.character_ids?.[0] || null,
         });
       }
       loadItems(); setStats(null); setShopping(null);
@@ -335,7 +343,14 @@ function PlanDetail({ plan, onClose, onRename, onDelete }: { plan: Plan; onClose
                       <input type="checkbox" checked={isDone} onChange={() => toggleItemDone(item)}
                              className="accent-eve-orange cursor-pointer" />
                     </td>
-                    <td className={`px-3 py-2 text-eve-text ${isDone ? "line-through" : ""}`}>{item.blueprint_name}</td>
+                    <td className={`px-3 py-2 text-eve-text ${isDone ? "line-through" : ""}`}>
+                      <div className="flex items-center gap-2">
+                        {item.blueprint_name}
+                        {item.character_id && (
+                          <OwnerPortraits ids={[item.character_id]} nameMap={charNameMap} size={14} />
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-2 text-eve-muted">{item.product_name}</td>
                     {isEditing ? (
                       <>
@@ -435,7 +450,14 @@ function PlanDetail({ plan, onClose, onRename, onDelete }: { plan: Plan; onClose
                 <tbody>
                   {stats.items.map((item, i) => (
                     <tr key={i} className="border-b border-eve-border/40 hover:bg-eve-bg/50">
-                      <td className="px-3 py-2 text-eve-muted text-xs">{item.blueprint_name}</td>
+                      <td className="px-3 py-2 text-eve-muted text-xs">
+                        <div className="flex items-center gap-2">
+                          {item.blueprint_name}
+                          {item.character_id && (
+                            <OwnerPortraits ids={[item.character_id]} nameMap={charNameMap} size={14} />
+                          )}
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-eve-text">{item.product_name}</td>
                       <td className="px-3 py-2 text-right text-eve-muted">{item.runs}</td>
                       <td className={`px-3 py-2 text-right font-mono ${item.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
@@ -549,32 +571,6 @@ interface BpGroup {
   minGroupCost?: number;
 }
 
-function BpOwnerPortraits({ ids, nameMap }: { ids: number[]; nameMap: Map<number, string> }) {
-  return (
-    <div className="flex items-center gap-0.5 shrink-0">
-      {ids.map(id => {
-        const name = nameMap.get(id) ?? `#${id}`;
-        return (
-          <div key={id} className="relative group/owner">
-            <img
-              src={`https://images.evetech.net/characters/${id}/portrait?size=32`}
-              alt={name}
-              className="rounded-full border border-amber-400/60"
-              style={{ width: 16, height: 16 }}
-            />
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5
-                            bg-eve-surface border border-eve-border rounded text-[9px] text-eve-text
-                            whitespace-nowrap opacity-0 group-hover/owner:opacity-100 transition-opacity
-                            pointer-events-none z-50 shadow-lg">
-              {name}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function BpCopyRow({
   bp, noPrices, eligibilityMap, onAdd, sortByShoppingCost,
 }: {
@@ -618,7 +614,7 @@ function BpCopyRow({
         )}
       </div>
       {bp.character_ids && bp.character_ids.length > 0 && (
-        <BpOwnerPortraits ids={bp.character_ids} nameMap={charNameMap} />
+        <OwnerPortraits ids={bp.character_ids} nameMap={charNameMap} />
       )}
       <CharacterMiniPortraits characters={eligible} size={18} />
       <div className="flex items-center gap-1 shrink-0 mr-2">
@@ -726,7 +722,7 @@ function BpGroupRow({
             )}
           </div>
         </div>
-        <BpVariantSection variant={group.variants[0]} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd} />
+        <BpVariantSection variant={group.variants[0]} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd} sortByShoppingCost={sortByShoppingCost} />
       </div>
     );
   }
@@ -878,7 +874,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
        bp.product_name.toLowerCase().includes(q) ||
        bp.category_name?.toLowerCase().includes(q)) &&
       (!showProfitableOnly || bp.profit > 0) &&
-      (!hideBpos || !bp.is_bpo)
+      (!hideBpos || !!!bp.is_bpo)
     );
 
     // 2. Pre-calculate shopping cost for each blueprint if sorting is enabled
@@ -887,7 +883,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
       filtered.forEach(bp => {
         let cost = 0;
         // BPO cost is calculated for 1 run (initial add), BPC for its full runs.
-        const targetRuns = bp.is_bpo ? 1 : bp.runs;
+        const targetRuns = (!!bp.is_bpo) ? 1 : bp.runs;
         const scale = bp.runs > 0 ? targetRuns / bp.runs : 1;
         
         bp.materials.forEach(m => {
@@ -944,7 +940,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
     } else {
       return result.sort((a, b) => a.name.localeCompare(b.name));
     }
-  }, [blueprints, search, showProfitableOnly, sortByShoppingCost, remainingWarehouse]);
+  }, [blueprints, search, showProfitableOnly, hideBpos, sortByShoppingCost, remainingWarehouse]);
 
   const toggleGroup = useCallback((name: string) => {
     setExpandedGroups(prev => {
@@ -1054,6 +1050,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
           runs: chosen_runs,
           me:   bp.me,
           te:   bp.te,
+          character_id: bp.character_ids?.[0] || null,
         });
       }
       onClose(plan);
@@ -1079,7 +1076,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={onClose}
+          <button onClick={() => onClose()}
             className="px-3 py-1.5 bg-eve-bg border border-eve-border text-eve-muted
                        text-xs font-bold uppercase rounded hover:text-eve-text transition-colors">
             Cancel
@@ -1390,7 +1387,13 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
 // Plans list (main page)
 // ---------------------------------------------------------------------------
 export default function PlansPage({ character }: Props) {
-  const [plans, setPlans]       = useState<Plan[]>([]);
+  const charSkillData = useCharacterSkillData();
+  const charNameMap = useMemo(() =>
+    new Map(charSkillData.map(c => [c.character_id, c.character_name])),
+  [charSkillData]);
+
+  const [plans, setPlans]           = useState<Plan[]>([]);
+
   const [selected, setSelected] = useState<Plan | null>(null);
   const [newName, setNewName]   = useState("");
   const [creating, setCreating] = useState(false);
@@ -1436,6 +1439,7 @@ export default function PlansPage({ character }: Props) {
           product_type_id:   item.product_type_id,
           product_name:      item.product_name,
           runs: item.runs, me: item.me, te: item.te,
+          character_id: item.character_ids?.[0] || null,
         });
       }
       setSuggestResult(null);
@@ -1484,6 +1488,7 @@ export default function PlansPage({ character }: Props) {
         <main className="max-w-screen-lg mx-auto px-4 py-6">
           <PlanDetail 
             plan={selected} 
+            charNameMap={charNameMap}
             onClose={() => setSelected(null)} 
             onRename={(p) => {
               const name = prompt("Enter new plan name:", p.name);
@@ -1580,7 +1585,12 @@ export default function PlansPage({ character }: Props) {
                 {suggestResult.suggested_items.map((item, idx) => (
                   <div key={idx}
                     className="flex items-center justify-between text-[11px] border-b border-eve-border/30 pb-1">
-                    <span className="text-eve-text truncate max-w-[200px]">{item.blueprint_name}</span>
+                    <div className="flex items-center gap-2 truncate max-w-[200px]">
+                      <span className="text-eve-text truncate">{item.blueprint_name}</span>
+                      {item.character_ids && item.character_ids.length > 0 && (
+                        <OwnerPortraits ids={item.character_ids} nameMap={charNameMap} size={14} />
+                      )}
+                    </div>
                     <span className="text-eve-muted">
                       {suggestResult.strategy === "profit"
                         ? `${isk(item.isk_per_hour)}/h`

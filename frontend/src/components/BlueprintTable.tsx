@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import type { BlueprintResult, MarketStats, SortKey } from "../types";
 import { useEligibilityMap, useCharacterSkillData } from "../hooks/useEligibleCharacters";
 import { CharacterMiniPortraits } from "./CharacterMiniPortraits";
+import { OwnerPortraits } from "./OwnerPortraits";
 
 interface Props {
   blueprints:  BlueprintResult[];
@@ -35,7 +36,7 @@ const TREND = {
   flat: { icon: "→", cls: "text-eve-muted/50" },
 } as const;
 
-export default function BlueprintTable({ blueprints, activity }: Props) {
+export default function BlueprintTable({ blueprints, activity, showGroups }: Props) {
   const [sortKey, setSortKey]     = useState<SortKey>("profit");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -62,26 +63,90 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
     );
   };
 
-  const sortedBlueprints = useMemo(() => {
+  const processedItems = useMemo(() => {
     let filtered = blueprints;
     if (deselectedCategories.length > 0) {
       filtered = filtered.filter(b => !b.category_name || !deselectedCategories.includes(b.category_name));
     }
 
+    if (showGroups) {
+      const grouped: Record<string, any> = {};
+      filtered.forEach(bp => {
+        const name = bp.blueprint_name.replace(" (Potential)", "");
+        if (!grouped[name]) {
+          grouped[name] = {
+            ...bp,
+            blueprint_name: name,
+            is_group: true,
+            variants: [],
+            total_profit: 0,
+            total_isk_per_hour: 0,
+            total_margin_pct: 0,
+            runs: 0,
+            character_ids: [],
+          };
+        }
+        grouped[name].variants.push(bp);
+        grouped[name].profit += bp.profit;
+        grouped[name].isk_per_hour += bp.isk_per_hour;
+        grouped[name].runs += bp.runs;
+        if (bp.character_ids) {
+          bp.character_ids.forEach(cid => {
+            if (!grouped[name].character_ids.includes(cid)) {
+              grouped[name].character_ids.push(cid);
+            }
+          });
+        }
+      });
+
+      // Calculate averages for margin
+      Object.values(grouped).forEach(g => {
+        if (g.variants.length > 0) {
+          g.margin_pct = g.variants.reduce((acc: number, v: any) => acc + v.margin_pct, 0) / g.variants.length;
+        }
+      });
+
+      const list = Object.values(grouped);
+      return list.sort((a, b) => {
+        let valA = a[sortKey];
+        let valB = b[sortKey];
+
+        if (sortKey === "blueprint_name") {
+          const strA = (valA || "").toString().toLowerCase();
+          const strB = (valB || "").toString().toLowerCase();
+          if (strA < strB) return sortOrder === "asc" ? -1 : 1;
+          if (strA > strB) return sortOrder === "asc" ? 1 : -1;
+          return 0;
+        }
+
+        const numA = Number(valA) || 0;
+        const numB = Number(valB) || 0;
+        if (numA < numB) return sortOrder === "asc" ? -1 : 1;
+        if (numA > numB) return sortOrder === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    // Individual mode
     return [...filtered].sort((a, b) => {
-      let valA = a[sortKey] ?? 0;
-      let valB = b[sortKey] ?? 0;
+      let valA = a[sortKey];
+      let valB = b[sortKey];
 
       if (sortKey === "blueprint_name") {
-        valA = a.blueprint_name.toLowerCase();
-        valB = b.blueprint_name.toLowerCase();
+        const strA = (valA || "").toString().toLowerCase();
+        const strB = (valB || "").toString().toLowerCase();
+        if (strA < strB) return sortOrder === "asc" ? -1 : 1;
+        if (strA > strB) return sortOrder === "asc" ? 1 : -1;
+        return 0;
       }
 
-      if (valA < valB) return sortOrder === "asc" ? -1 : 1;
-      if (valA > valB) return sortOrder === "asc" ? 1 : -1;
+      const numA = Number(valA) || 0;
+      const numB = Number(valB) || 0;
+      if (numA < numB) return sortOrder === "asc" ? -1 : 1;
+      if (numA > numB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
-  }, [blueprints, sortKey, sortOrder, deselectedCategories]);
+  }, [blueprints, sortKey, sortOrder, deselectedCategories, showGroups]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -92,8 +157,10 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
     }
   };
 
-  const toggleExpand = (bp: BlueprintResult) => {
-    const id = `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.decryptor_name || ""}`;
+  const toggleExpand = (bp: any) => {
+    const id = bp.is_group 
+      ? `group-${bp.blueprint_name}`
+      : `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.decryptor_name || ""}`;
     setExpandedId(expandedId === id ? null : id);
   };
 
@@ -148,11 +215,109 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
             </tr>
           </thead>
           <tbody className="divide-y divide-eve-border/50">
-            {sortedBlueprints.map((bp) => {
-              const rowId = `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.decryptor_name || ""}`;
+            {processedItems.map((bp) => {
+              const rowId = bp.is_group 
+                ? `group-${bp.blueprint_name}`
+                : `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.decryptor_name || ""}`;
               const isExpanded = expandedId === rowId;
               const cleanBpName = bp.blueprint_name.replace(" (Potential)", "");
               const eligible = activity ? (eligibilityMap.get(bp.blueprint_type_id) ?? []) : [];
+
+              if (bp.is_group) {
+                return (
+                  <React.Fragment key={rowId}>
+                    <tr
+                      className={`group hover:bg-white/5 transition-colors cursor-pointer ${isExpanded ? "bg-white/5 text-eve-orange" : ""}`}
+                      onClick={() => toggleExpand(bp)}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-eve-text group-hover:text-eve-orange transition-colors">
+                              {cleanBpName}
+                            </span>
+                            <span className="text-[10px] bg-eve-bg px-1.5 py-0.5 rounded border border-eve-border text-eve-muted font-bold uppercase">
+                              {bp.variants.length} Variant{bp.variants.length !== 1 ? "s" : ""}
+                            </span>
+                            {bp.character_ids && bp.character_ids.length > 0 && (
+                              <OwnerPortraits ids={bp.character_ids} nameMap={charNameMap} />
+                            )}
+                          </div>
+                          <div className="flex gap-2 text-[10px] mt-0.5">
+                            <span className="text-eve-muted font-bold uppercase">{bp.category_name}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right text-eve-muted font-medium">
+                        {bp.runs}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-bold ${bp.profit > 0 ? "text-green-400" : "text-red-400"}`}>
+                        {fmtISK(bp.profit)}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-medium ${bp.margin_pct > 0 ? "text-green-500/80" : "text-red-500/80"}`}>
+                        {PCT_FORMAT.format(bp.margin_pct)}%
+                      </td>
+                      <td className="px-4 py-3 text-right text-eve-text font-medium">
+                        {fmtISK(bp.isk_per_hour)}
+                      </td>
+                      {activity && (
+                        <td className="px-3 py-3">
+                          {/* Aggregate eligibility: anyone who can do any variant */}
+                        </td>
+                      )}
+                      <td className="px-2 py-3 text-right">
+                        <span className="text-eve-muted text-xs">{isExpanded ? "−" : "+"}</span>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="bg-eve-bg/30">
+                        <td colSpan={colCount} className="px-0 py-0 border-b border-eve-border">
+                          <div className="bg-eve-bg/50 px-4 py-3">
+                            <div className="text-[10px] font-bold uppercase tracking-widest text-eve-muted mb-3 pb-1 border-b border-eve-border/30">
+                              Blueprint Variants
+                            </div>
+                            <div className="space-y-2">
+                              {bp.variants.map((v: any) => {
+                                const vEligible = activity ? (eligibilityMap.get(v.blueprint_type_id) ?? []) : [];
+                                return (
+                                  <div key={`${v.blueprint_type_id}-${v.me}-${v.te}-${v.decryptor_name || ""}`} 
+                                       className="flex items-center justify-between bg-eve-surface/50 border border-eve-border/30 rounded px-3 py-2 text-xs">
+                                    <div className="flex flex-col gap-0.5">
+                                      <div className="flex items-center gap-2">
+                                        <span className={v.is_bpo ? "text-green-500 font-bold uppercase text-[9px]" : "text-yellow-500 font-bold uppercase text-[9px]"}>
+                                          {v.is_bpo ? "BPO" : "BPC"}
+                                        </span>
+                                        <span className="text-blue-400 text-[10px]">ME {v.me}</span>
+                                        <span className="text-purple-400 text-[10px]">TE {v.te}</span>
+                                        {v.decryptor_name && <span className="text-eve-orange text-[10px]">D: {v.decryptor_name}</span>}
+                                        <span className="text-eve-muted">· {v.runs} runs</span>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-6">
+                                      <div className="text-right">
+                                        <div className={`font-bold ${v.profit > 0 ? "text-green-400" : "text-red-400"}`}>{fmtISK(v.profit)}</div>
+                                        <div className="text-[10px] text-eve-muted">{PCT_FORMAT.format(v.margin_pct)}% margin</div>
+                                      </div>
+                                      <div className="text-right w-24">
+                                        <div className="font-medium text-eve-text">{fmtISK(v.isk_per_hour)}/h</div>
+                                      </div>
+                                      {activity && (
+                                        <div className="w-20 flex justify-center">
+                                          <CharacterMiniPortraits characters={vEligible} size={18} />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              }
 
               return (
                 <React.Fragment key={rowId}>
@@ -230,7 +395,7 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
                               Required Materials (for {bp.runs} runs)
                             </h4>
                             <div className="space-y-1.5">
-                              {bp.materials.map((mat) => (
+                              {bp.materials.map((mat: any) => (
                                 <div key={mat.type_id} className="flex justify-between text-xs group/mat">
                                   <span className="text-eve-text group-hover/mat:text-eve-orange transition-colors">
                                     {mat.name}
@@ -266,32 +431,6 @@ export default function BlueprintTable({ blueprints, activity }: Props) {
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function OwnerPortraits({ ids, nameMap }: { ids: number[]; nameMap: Map<number, string> }) {
-  return (
-    <div className="flex items-center gap-0.5">
-      {ids.map(id => {
-        const name = nameMap.get(id) ?? `#${id}`;
-        return (
-          <div key={id} className="relative group/owner">
-            <img
-              src={`https://images.evetech.net/characters/${id}/portrait?size=32`}
-              alt={name}
-              className="rounded-full border border-eve-border/60"
-              style={{ width: 16, height: 16 }}
-            />
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5
-                            bg-eve-surface border border-eve-border rounded text-[9px] text-eve-text
-                            whitespace-nowrap opacity-0 group-hover/owner:opacity-100 transition-opacity
-                            pointer-events-none z-50 shadow-lg">
-              {name}
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }

@@ -48,6 +48,7 @@ export interface RequiredSkill {
 }
 
 export interface BlueprintResult {
+  [key: string]: any;
   blueprint_type_id: number;
   blueprint_name:    string;
   product_type_id:   number;
@@ -148,6 +149,7 @@ export interface SlotSuggestion {
   profit:            number;
   isk_per_hour:      number;
   margin_pct:        number;
+  character_ids?:    number[];
 }
 
 export interface CharacterSlots {
@@ -190,6 +192,7 @@ export interface PlanItem {
   me:                number;
   te:                number;
   status:            string;
+  character_id?:     number;
 }
 
 
@@ -200,16 +203,18 @@ export interface PlanStats {
   total_revenue:        number;
   total_profit:         number;
   total_margin_pct:     number;
-  items:                PlanStatItem[];
+  items:                PlanItemStats[];
 }
 
-export interface PlanStatItem {
+export interface PlanItemStats {
   blueprint_name: string;
   product_name:   string;
   runs:           number;
   profit:         number;
   isk_per_hour:   number;
+  character_id?:  number;
 }
+
 
 export interface PlanShoppingResult {
   materials: ShoppingMaterial[];

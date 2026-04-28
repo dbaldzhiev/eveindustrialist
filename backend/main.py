@@ -96,6 +96,7 @@ def _profit_settings(
     structure_me_bonus: float, structure_te_bonus: float, structure_cost_bonus: float,
     material_order_type: str, product_order_type: str,
     industry_level: int = 0, adv_industry_level: int = 0,
+    reaction_level: int = 0,
 ) -> ProfitSettings:
     return ProfitSettings(
         broker_fee=broker_fee, sales_tax=sales_tax, facility_tax=facility_tax,
@@ -107,6 +108,7 @@ def _profit_settings(
         product_order_type=product_order_type,
         industry_level=industry_level,
         adv_industry_level=adv_industry_level,
+        reaction_level=reaction_level,
     )
 
 
@@ -572,6 +574,11 @@ def esi_refresh(session: str | None = Cookie(None)):
             get_character_jobs(cid, token, force_refresh=True)
         except Exception as e:
             errors.append(f"jobs:{cid}:{e}")
+        try:
+            token = get_access_token(cid)
+            get_character_skills(cid, token, force_refresh=True)
+        except Exception as e:
+            errors.append(f"skills:{cid}:{e}")
 
     return {"ok": True, "errors": errors}
 
@@ -641,6 +648,7 @@ def blueprint_detail(
         runs, broker_fee, sales_tax, facility_tax,
         structure_me_bonus, structure_te_bonus, structure_cost_bonus,
         material_order_type, product_order_type, industry_level, adv_industry_level,
+        reaction_level,
     )
 
     name_map = get_type_names_batch([blueprint_type_id])
@@ -717,6 +725,7 @@ def blueprints(
         material_order_type, product_order_type,
         industry_level=skills["industry"],
         adv_industry_level=skills["adv_industry"],
+        reaction_level=skills["reactions"],
     )
     return _calc_profits_for_bps(
         all_bps, price_region_id, solar_system_id, settings, min_profit, 
@@ -766,6 +775,7 @@ def blueprints_explore(
         material_order_type, product_order_type,
         industry_level=skills["industry"],
         adv_industry_level=skills["adv_industry"],
+        reaction_level=skills["reactions"],
     )
 
     all_bp_ids = get_all_manufacturing_bp_ids()
@@ -846,6 +856,7 @@ def reactions_explore(
         material_order_type, product_order_type,
         industry_level=skills["industry"],
         adv_industry_level=skills["adv_industry"],
+        reaction_level=skills["reactions"],
     )
 
     all_bp_ids = get_all_reaction_bp_ids()
@@ -924,7 +935,10 @@ def slots_dashboard(session: str | None = Cookie(None)):
                              skills.get(INDUSTRY_SKILL_IDS["adv_mass_production"], 0)
         research_total = 1 + skills.get(INDUSTRY_SKILL_IDS["lab_operation"], 0) + \
                              skills.get(INDUSTRY_SKILL_IDS["adv_lab_operation"], 0)
-        reaction_total = 1 + skills.get(INDUSTRY_SKILL_IDS["mass_reactions"], 0)
+        
+        mr_lvl = skills.get(INDUSTRY_SKILL_IDS["mass_reactions"], 0)
+        amr_lvl = skills.get(INDUSTRY_SKILL_IDS["adv_mass_reactions"], 0)
+        reaction_total = 1 + mr_lvl + amr_lvl
 
         mfg_used      = sum(1 for j in jobs if j["activity_id"] in MFG_ACTIVITIES)
         research_used = sum(1 for j in jobs if j["activity_id"] in RESEARCH_ACTIVITIES)
@@ -1062,6 +1076,7 @@ def slot_suggestions(
         material_order_type, product_order_type,
         industry_level=skills["industry"],
         adv_industry_level=skills["adv_industry"],
+        reaction_level=skills["reactions"],
     )
     results = _calc_profits_for_bps(all_bps, price_region_id, solar_system_id, settings, 0)
     # Sort by ISK/hour and return top N
@@ -1422,7 +1437,9 @@ def suggest_plan(strategy: str = "profit", session: str | None = Cookie(None)):
         settings_raw["runs"], settings_raw["broker_fee"], settings_raw["sales_tax"], settings_raw["facility_tax"],
         settings_raw["structure_me_bonus"], settings_raw["structure_te_bonus"], settings_raw["structure_cost_bonus"],
         settings_raw["material_order_type"], settings_raw["product_order_type"],
-        industry_level=skills["industry"], adv_industry_level=skills["adv_industry"],
+        industry_level=skills["industry"],
+        adv_industry_level=skills["adv_industry"],
+        reaction_level=skills["reactions"],
     )
 
     # 3. Fetch all character blueprints
@@ -1613,6 +1630,7 @@ def plan_stats(
     product_order_type:   str   = Query("sell"),
     industry_level:       int   = Query(0),
     adv_industry_level:   int   = Query(0),
+    reaction_level:       int   = Query(0),
     min_profit:           float = Query(0.0),
     session: str | None = Cookie(None),
 ):
@@ -1645,6 +1663,7 @@ def plan_stats(
         runs, broker_fee, sales_tax, facility_tax,
         structure_me_bonus, structure_te_bonus, structure_cost_bonus,
         material_order_type, product_order_type, industry_level, adv_industry_level,
+        reaction_level,
     )
 
     stat_items     = []
@@ -1666,6 +1685,7 @@ def plan_stats(
             product_order_type=settings.product_order_type,
             industry_level=settings.industry_level,
             adv_industry_level=settings.adv_industry_level,
+            reaction_level=settings.reaction_level,
         )
         result = calculate_blueprint_profit(
             blueprint_type_id=item["blueprint_type_id"],

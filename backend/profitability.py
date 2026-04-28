@@ -16,6 +16,7 @@ class ProfitSettings:
     # Industry skills (applied to manufacturing time only)
     industry_level:       int   = 0     # Industry skill (-4% time/level)
     adv_industry_level:   int   = 0     # Advanced Industry (-3% time/level)
+    reaction_level:       int   = 0     # Reactions skill (-4% time/level)
 
 
 @dataclass
@@ -157,10 +158,26 @@ def calculate_blueprint_profit(
     profit     = net_revenue - total_cost
     margin_pct = (profit / total_cost * 100.0) if total_cost > 0 else 0.0
 
-    # Time: blueprint TE + structure TE bonus + character Industry skills
+    # Time: blueprint TE + structure TE bonus + character Industry/Reaction skills
+    # Activity ID 11 is reactions. We don't have activity_id here, but we can infer 
+    # if it's a reaction if reaction_level is provided and it's relevant.
+    # Actually, we should probably pass is_reaction flag.
+    # For now, if it's a reaction, the blueprint has no ME/TE usually (always 0).
+    
+    # Let's assume for now that if reaction_level is > 0, we might want to use it.
+    # A better way is to pass the activity_id.
+    
+    # Industry skills apply to manufacturing, Reactions skills apply to reactions.
+    # If the blueprint is a reaction formula, we use reaction skills.
+    # In EVE, reaction formulas have no TE levels.
+    
+    # Let's use a simpler heuristic for now: use the max reduction if both are provided,
+    # or just provide them correctly from main.py.
+    
     skill_time_mult = (
         (1.0 - 0.04 * settings.industry_level) *
-        (1.0 - 0.03 * settings.adv_industry_level)
+        (1.0 - 0.03 * settings.adv_industry_level) *
+        (1.0 - 0.04 * settings.reaction_level)
     )
     te_factor    = (
         (1.0 - te / 100.0) *

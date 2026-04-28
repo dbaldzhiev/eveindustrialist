@@ -54,9 +54,9 @@ function JobRow({ job }: { job: ActiveJob }) {
 }
 
 function CharacterCard({ slots, nameMap }: { slots: CharacterSlots; nameMap: Map<number, string> }) {
-  const freeMfg      = slots.mfg_max - slots.mfg_used;
-  const freeResearch = slots.research_max - slots.research_used;
-  const freeReaction = slots.reaction_max - slots.reaction_used;
+  const freeMfg      = Math.max(0, slots.mfg_max - slots.mfg_used);
+  const freeResearch = Math.max(0, slots.research_max - slots.research_used);
+  const freeReaction = Math.max(0, slots.reaction_max - slots.reaction_used);
 
   return (
     <div className="bg-eve-surface border border-eve-border rounded-lg p-4 space-y-4">

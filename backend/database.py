@@ -849,6 +849,15 @@ def store_skills(character_id: int, skills: dict[int, int]) -> None:
         conn.close()
 
 
+def clear_skills_cache(character_id: int) -> None:
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM skills_cache WHERE character_id = ?", (character_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Jobs cache helpers
 # ---------------------------------------------------------------------------

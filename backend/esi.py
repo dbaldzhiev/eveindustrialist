@@ -11,7 +11,7 @@ import time
 import httpx
 from database import (
     get_db, _chunk,
-    get_cached_skills, store_skills,
+    get_cached_skills, store_skills, clear_skills_cache,
     get_cached_jobs, store_jobs,
     get_cached_assets, store_assets,
     get_type_names_batch,
@@ -33,6 +33,8 @@ INDUSTRY_SKILL_IDS = {
     "lab_operation":       3406,   # +1 research slot per level
     "adv_lab_operation":   24624,  # +1 research slot per level
     "mass_reactions":      45748,  # +1 reaction slot per level
+    "adv_mass_reactions":  45749,  # +1 reaction slot per level
+    "reactions":           45746,  # -4% reaction time per level
     "science":             3402,   # required for copy/invent
 }
 
@@ -170,15 +172,18 @@ def get_character_blueprints(character_id: int, access_token: str) -> list[dict]
 # Character skills
 # ---------------------------------------------------------------------------
 
-def get_character_skills(character_id: int, access_token: str) -> dict[int, int]:
+def get_character_skills(character_id: int, access_token: str, force_refresh: bool = False) -> dict[int, int]:
     """
     Return {skill_id: trained_level} for industry-relevant skills.
-    Results are cached for 1 hour.
+    Results are cached for 1 hour unless force_refresh=True.
     """
     skill_ids = list(INDUSTRY_SKILL_IDS.values())
-    cached    = get_cached_skills(character_id, skill_ids)
-    if len(cached) == len(skill_ids):
-        return cached  # all needed skills are in cache
+    if force_refresh:
+        clear_skills_cache(character_id)
+    else:
+        cached = get_cached_skills(character_id, skill_ids)
+        if all(sid in cached for sid in skill_ids):
+            return cached  # all needed skills are in cache
 
     # Fetch full skill sheet from ESI
     data   = _esi_get(f"/characters/{character_id}/skills/", token=access_token)

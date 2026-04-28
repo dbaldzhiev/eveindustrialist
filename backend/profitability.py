@@ -47,6 +47,7 @@ class BlueprintProfit:
     isk_per_hour:      float
     sell_price:        float
     product_quantity:  int = 0
+    tech_level:        int = 1
     materials: list[MaterialLine] = field(default_factory=list)
 
     def to_api_dict(self, include_materials: bool = True) -> dict:
@@ -68,6 +69,7 @@ class BlueprintProfit:
             "isk_per_hour":      round(self.isk_per_hour, 2),
             "sell_price":        round(self.sell_price, 2),
             "product_quantity":  self.product_quantity,
+            "tech_level":        self.tech_level,
         }
         if include_materials:
             d["materials"] = [
@@ -119,6 +121,7 @@ def calculate_blueprint_profit(
     adjusted_prices:    dict[int, dict],
     system_cost_index:  float,
     settings:           ProfitSettings,
+    tech_level:         int = 1,
 ) -> "BlueprintProfit | None":
     if not sde_products:
         return None
@@ -126,6 +129,9 @@ def calculate_blueprint_profit(
     product         = sde_products[0]
     product_type_id = product["type_id"]
     sell_price      = market_prices.get(product_type_id, {}).get(settings.product_order_type, 0.0)
+
+    # Use tech level from product if it's more specific
+    final_tech_level = max(tech_level, product.get("tech_level", 1))
 
     material_lines: list[MaterialLine] = []
     material_cost = 0.0
@@ -198,4 +204,5 @@ def calculate_blueprint_profit(
         profit=profit, margin_pct=margin_pct,
         isk_per_hour=isk_per_hour, sell_price=sell_price,
         materials=material_lines, product_quantity=total_qty,
+        tech_level=final_tech_level,
     )

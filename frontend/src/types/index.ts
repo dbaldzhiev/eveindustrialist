@@ -78,6 +78,7 @@ export interface BlueprintResult {
   product_quantity: number;
   materials: MaterialLine[];
   category_name?: string;
+  tech_level?: number;
 }
 
 export type SortKey =

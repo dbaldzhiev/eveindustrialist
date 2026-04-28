@@ -36,7 +36,10 @@ const TREND = {
   flat: { icon: "→", cls: "text-eve-muted/50" },
 } as const;
 
-function getTechColorClass(bpName: string, product_name: string) {
+function getTechColorClass(bpName: string, product_name: string, techLevel?: number) {
+  if (techLevel === 3) return "text-red-500";
+  if (techLevel === 2) return "text-eve-orange";
+
   const name = (bpName + " " + product_name).toLowerCase();
   // T3 Heuristics
   const t3Keywords = ["proteus", "tengu", "legion", "loki", "confessor", "svipul", "jackdaw", "hecate", "subsystem"];
@@ -247,7 +250,7 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                       <td className="px-4 py-3">
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2">
-                            <span className={`font-semibold group-hover:text-eve-orange transition-colors ${getTechColorClass(bp.blueprint_name, bp.product_name || "")}`}>
+                            <span className={`font-semibold group-hover:text-eve-orange transition-colors ${getTechColorClass(bp.blueprint_name, bp.product_name || "", bp.tech_level)}`}>
                               {cleanBpName}
                             </span>
                             <span className="text-[10px] bg-eve-bg px-1.5 py-0.5 rounded border border-eve-border text-eve-muted font-bold uppercase">
@@ -378,7 +381,7 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                     <td className="px-4 py-3">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
-                          <span className={`font-semibold group-hover:text-eve-orange transition-colors ${getTechColorClass(bp.blueprint_name, bp.product_name)}`}>
+                          <span className={`font-semibold group-hover:text-eve-orange transition-colors ${getTechColorClass(bp.blueprint_name, bp.product_name, bp.tech_level)}`}>
                             {cleanBpName}
                           </span>
                           {bp.character_ids && bp.character_ids.length > 0 && (

@@ -332,6 +332,7 @@ def _calc_profits_for_bps(
                 adjusted_prices=adjusted_prices,
                 system_cost_index=cost_index,
                 settings=bp_settings,
+                tech_level=data.get("tech_level", 1),
             )
             if result:
                 d = result.to_api_dict(include_materials=True)
@@ -434,6 +435,7 @@ def _calc_profits_for_bps(
             adjusted_prices=adjusted_prices,
             system_cost_index=cost_index,
             settings=bp_settings,
+            tech_level=data.get("tech_level", 1),
         )
         if result and result.profit >= min_profit:
             d = result.to_api_dict(include_materials=include_materials)
@@ -752,6 +754,7 @@ def blueprint_detail(
         adjusted_prices=adjusted_prices,
         system_cost_index=cost_index,
         settings=settings,
+        tech_level=data.get("tech_level", 1),
     )
     if not result:
         raise HTTPException(status_code=404, detail="Calculation failed")
@@ -988,6 +991,7 @@ def blueprints_explore(
             adjusted_prices=adjusted_prices,
             system_cost_index=cost_index,
             settings=settings,
+            tech_level=data.get("tech_level", 1),
         )
         if result and result.profit >= min_profit:
             d = result.to_api_dict()
@@ -1071,6 +1075,7 @@ def reactions_explore(
             adjusted_prices=adjusted_prices,
             system_cost_index=cost_index,
             settings=settings,
+            tech_level=data.get("tech_level", 1),
         )
         if result and result.profit >= min_profit:
             d = result.to_api_dict()
@@ -1922,6 +1927,7 @@ def plan_stats(
             adjusted_prices=adjusted_prices,
             system_cost_index=cost_index,
             settings=item_settings,
+            tech_level=data.get("tech_level", 1),
         )
         if result:
             total_mat_cost += result.material_cost

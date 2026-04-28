@@ -413,13 +413,21 @@ def get_blueprints_data_batch(bp_type_ids: list[int], activity_id: int = 1) -> d
     if not bp_type_ids:
         return {}
     result: dict[int, dict] = {
-        tid: {"materials": [], "products": [], "time": 3600}
+        tid: {"materials": [], "products": [], "time": 3600, "tech_level": 1}
         for tid in bp_type_ids
     }
     conn = get_db()
     try:
         for chunk in _chunk(bp_type_ids):
             ph = ",".join("?" * len(chunk))
+            
+            # Determine BP tech level: if it's a product of activity 8 (Invention), it's Tech 2
+            for row in conn.execute(
+                f"SELECT DISTINCT productTypeID FROM industryActivityProducts WHERE productTypeID IN ({ph}) AND activityID = 8",
+                chunk
+            ).fetchall():
+                result[row["productTypeID"]]["tech_level"] = 2
+
             for row in conn.execute(
                 f"""
                 SELECT m.typeID AS bp_id, m.materialTypeID AS type_id,
@@ -432,6 +440,8 @@ def get_blueprints_data_batch(bp_type_ids: list[int], activity_id: int = 1) -> d
                 result[row["bp_id"]]["materials"].append(
                     {"type_id": row["type_id"], "name": row["name"], "quantity": row["quantity"]}
                 )
+            
+            # For products, we also want to know their tech level
             for row in conn.execute(
                 f"""
                 SELECT p.typeID AS bp_id, p.productTypeID AS type_id,
@@ -441,9 +451,19 @@ def get_blueprints_data_batch(bp_type_ids: list[int], activity_id: int = 1) -> d
                 WHERE  p.typeID IN ({ph}) AND p.activityID = ?
                 """, (*chunk, activity_id),
             ).fetchall():
-                result[row["bp_id"]]["products"].append(
-                    {"type_id": row["type_id"], "name": row["name"], "quantity": row["quantity"]}
-                )
+                # Default tech 1
+                prod = {"type_id": row["type_id"], "name": row["name"], "quantity": row["quantity"], "tech_level": 1}
+                
+                # Check if this product is produced by a BP that is itself an invention product
+                # OR if the product name ends with II/III (fallback)
+                name = row["name"].lower()
+                if " ii " in name or name.endswith(" ii"):
+                    prod["tech_level"] = 2
+                elif " iii " in name or name.endswith(" iii"):
+                    prod["tech_level"] = 3
+                
+                result[row["bp_id"]]["products"].append(prod)
+
             for row in conn.execute(
                 f"""
                 SELECT typeID AS bp_id, time
@@ -452,6 +472,33 @@ def get_blueprints_data_batch(bp_type_ids: list[int], activity_id: int = 1) -> d
                 """, (*chunk, activity_id),
             ).fetchall():
                 result[row["bp_id"]]["time"] = row["time"]
+        
+        # Final pass for product tech levels based on their producing blueprints
+        all_product_ids = []
+        for bp_data in result.values():
+            for p in bp_data["products"]:
+                all_product_ids.append(p["type_id"])
+        
+        if all_product_ids:
+            invented_products = set()
+            for chunk in _chunk(list(set(all_product_ids))):
+                ph = ",".join("?" * len(chunk))
+                # If the product's blueprint is an invention product, then the product is Tech 2
+                # We need to find the BP that produces this product, and check if THAT BP is an invention product
+                for row in conn.execute(
+                    f"""
+                    SELECT DISTINCT p.productTypeID 
+                    FROM industryActivityProducts p
+                    JOIN industryActivityProducts p_inv ON p_inv.productTypeID = p.typeID
+                    WHERE p.productTypeID IN ({ph}) AND p.activityID = 1 AND p_inv.activityID = 8
+                    """, chunk
+                ).fetchall():
+                    invented_products.add(row["productTypeID"])
+            
+            for bp_data in result.values():
+                for p in bp_data["products"]:
+                    if p["type_id"] in invented_products:
+                        p["tech_level"] = 2
     finally:
         conn.close()
     return result

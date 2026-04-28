@@ -327,9 +327,13 @@ export interface SuggestResult {
   reason?:         string;
 }
 
-export async function fetchSuggestedPlan(strategy: string = "profit"): Promise<SuggestResult> {
+export async function fetchSuggestedPlan(
+  strategy: string = "profit",
+  maxIsk?:  number,
+  maxItems?: number,
+): Promise<SuggestResult> {
   const { data } = await api.get<SuggestResult>("/api/plans/suggest", {
-    params: { strategy },
+    params: { strategy, max_isk: maxIsk, max_items: maxItems },
   });
   return data;
 }

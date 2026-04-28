@@ -1412,18 +1412,26 @@ def remove_from_plan(plan_id: int, item_id: int, session: str | None = Cookie(No
 
 
 @app.get("/api/plans/suggest")
-def suggest_plan(strategy: str = "profit", session: str | None = Cookie(None)):
+def suggest_plan(
+    strategy: str = "profit",
+    max_isk: float = Query(1e12),
+    max_items: int = Query(None),
+    session: str | None = Cookie(None)
+):
     """
     Suggest manufacturing runs to fill open slots.
     strategy: "profit" (max ISK/h) or "materials" (max already owned in warehouse)
     """
     primary_id = _primary(session)
     char_ids   = get_group_character_ids(primary_id)
-    
+
     # 1. Find total open manufacturing slots
     raw_slots = slots_dashboard(session)
     total_open = sum(max(0, s["manufacturing"]["total"] - s["manufacturing"]["used"]) for s in raw_slots)
-    
+
+    if max_items is not None:
+        total_open = min(total_open, max_items)
+
     if total_open <= 0:
         return {"suggested_items": [], "reason": "No open manufacturing slots available"}
 
@@ -1454,41 +1462,83 @@ def suggest_plan(strategy: str = "profit", session: str | None = Cookie(None)):
 
     # Calculate full profit/material data
     results = _calc_profits_for_bps(
-        all_bps, settings_raw["default_price_region"], settings_raw["default_system_id"], 
-        p_settings, min_profit=-1e15, include_materials=True
+        all_bps, settings_raw["default_price_region"], settings_raw["default_system_id"],
+        p_settings, min_profit=-1e15, include_materials=True,
+        individual=True, primary_id=primary_id
     )
 
-    # 4. Rank items based on strategy
+    # 4. Filter and rank items based on strategy
+    # Load warehouse for material-aware strategies
+    warehouse: dict[int, int] = {}
+    for cid in char_ids:
+        assets = get_cached_assets(cid)
+        if assets:
+            for a in assets:
+                tid = a["type_id"]
+                warehouse[tid] = warehouse.get(tid, 0) + a.get("quantity", 1)
+
     if strategy == "profit":
         results.sort(key=lambda x: x["isk_per_hour"], reverse=True)
+        suggested = results[:total_open]
     elif strategy == "materials":
-        # Percentage of total material quantity already owned in group assets
-        warehouse: dict[int, int] = {}
-        for cid in char_ids:
-            assets = get_cached_assets(cid)
-            if assets:
-                for a in assets:
-                    tid = a["type_id"]
-                    warehouse[tid] = warehouse.get(tid, 0) + a.get("quantity", 1)
-        
-        def material_score(bp):
-            mats = bp.get("materials", [])
-            if not mats: return 0
-            total_needed = sum(m["quantity"] for m in mats)
-            if total_needed == 0: return 1.0
-            owned = sum(min(m["quantity"], warehouse.get(m["type_id"], 0)) for m in mats)
-            return owned / total_needed
+        # Greedy optimization to maximize profit given max_isk budget and warehouse stock
+        selected = []
+        current_spent = 0.0
+        current_warehouse = warehouse.copy()
 
-        results.sort(key=material_score, reverse=True)
+        # Only consider profitable items
+        candidates = [r for r in results if r["profit"] > 0]
 
-    # 5. Suggest top N to fill slots
-    suggested = results[:total_open]
+        # We'll use a greedy approach: in each step, pick the item that gives the best 
+        # profit / (cost to buy missing materials).
+        # We need to re-evaluate scores because picking one item consumes warehouse mats.
+        while len(selected) < total_open and candidates:
+            best_idx = -1
+            best_score = -1.0
+            best_buy_cost = 0.0
+
+            for i, cand in enumerate(candidates):
+                buy_cost = 0.0
+                for mat in cand.get("materials", []):
+                    needed = mat["quantity"]
+                    owned = current_warehouse.get(mat["type_id"], 0)
+                    to_buy = max(0, needed - owned)
+                    buy_cost += to_buy * mat["unit_price"]
+
+                if current_spent + buy_cost > max_isk:
+                    continue
+
+                # Score = profit per ISK spent. If buy_cost is 0, it's very high priority.
+                score = cand["profit"] / max(1.0, buy_cost)
+                if buy_cost == 0:
+                    score += 1e12 # Boost items that are "free" to start
+
+                if score > best_score:
+                    best_score = score
+                    best_idx = i
+                    best_buy_cost = buy_cost
+
+            if best_idx == -1:
+                break # No more candidates fit the budget
+
+            winner = candidates.pop(best_idx)
+            selected.append(winner)
+            current_spent += best_buy_cost
+
+            # Update warehouse stock
+            for mat in winner.get("materials", []):
+                tid = mat["type_id"]
+                current_warehouse[tid] = max(0, current_warehouse.get(tid, 0) - mat["quantity"])
+
+        suggested = selected
+    else:
+        suggested = results[:total_open]
+
     return {
         "strategy": strategy,
         "open_slots": total_open,
         "suggested_items": suggested
     }
-
 
 @app.get("/api/plans/{plan_id}/summary")
 def plan_summary(

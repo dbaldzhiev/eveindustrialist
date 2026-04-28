@@ -248,29 +248,6 @@ function PlanDetail({ plan, charNameMap, onClose, onRename, onDelete }: {
     loadItems(); setStats(null); setShopping(null);
   };
 
-  const handleMiniSuggest = async (strategy: string) => {
-    try {
-      const res = await fetchSuggestedPlan(strategy);
-      if (res.suggested_items.length === 0) {
-        alert("No suitable blueprints found for open slots.");
-        return;
-      }
-      for (const item of res.suggested_items) {
-        await addPlanItem(plan.id, {
-          blueprint_type_id: item.blueprint_type_id,
-          blueprint_name:    item.blueprint_name,
-          product_type_id:   item.product_type_id,
-          product_name:      item.product_name,
-          runs: item.runs, me: item.me, te: item.te,
-          character_id: item.character_ids?.[0] || null,
-        });
-      }
-      loadItems(); setStats(null); setShopping(null);
-    } catch (e: any) {
-      alert(e.message || "Suggestion failed");
-    }
-  };
-
   const toggleItemDone = async (item: PlanItem) => {
     const newStatus = item.status === "done" ? "active" : "done";
     try {
@@ -1401,6 +1378,8 @@ export default function PlansPage({ character }: Props) {
 
   const [suggestResult, setSuggestResult]   = useState<SuggestResult | null>(null);
   const [loadingSuggest, setLoadingSuggest] = useState(false);
+  const [maxIsk, setMaxIsk]                 = useState<string>("1000"); // in Millions
+  const [maxItems, setMaxItems]             = useState<string>("");
 
   const loadPlans = () => {
     fetchPlans()
@@ -1417,7 +1396,9 @@ export default function PlansPage({ character }: Props) {
     setLoadingSuggest(true);
     setSuggestResult(null);
     try {
-      const res = await fetchSuggestedPlan(strategy);
+      const iskLimit = parseFloat(maxIsk) * 1_000_000;
+      const itemCount = maxItems ? parseInt(maxItems) : undefined;
+      const res = await fetchSuggestedPlan(strategy, iskLimit, itemCount);
       setSuggestResult(res);
     } catch (e: any) {
       alert(e.message || "Failed to get suggestions");
@@ -1556,6 +1537,23 @@ export default function PlansPage({ character }: Props) {
             </h2>
             <div className="text-[10px] text-eve-muted uppercase">Fill open character slots</div>
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-eve-muted uppercase">Max ISK to buy (Millions)</span>
+              <input type="number" value={maxIsk}
+                onChange={(e) => setMaxIsk(e.target.value)}
+                className="bg-eve-bg border border-eve-border rounded px-2 py-1 text-xs text-eve-text focus:outline-none focus:border-eve-orange" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-eve-muted uppercase">Max items to build</span>
+              <input type="number" value={maxItems}
+                onChange={(e) => setMaxItems(e.target.value)}
+                placeholder="Optional"
+                className="bg-eve-bg border border-eve-border rounded px-2 py-1 text-xs text-eve-text focus:outline-none focus:border-eve-orange" />
+            </label>
+          </div>
+
           <div className="flex gap-3">
             <button onClick={() => handleSuggest("profit")} disabled={loadingSuggest || creating}
               className="flex-1 px-4 py-2 bg-eve-bg border border-eve-orange/30 hover:border-eve-orange
@@ -1594,7 +1592,7 @@ export default function PlansPage({ character }: Props) {
                     <span className="text-eve-muted">
                       {suggestResult.strategy === "profit"
                         ? `${isk(item.isk_per_hour)}/h`
-                        : "In Inventory"}
+                        : `${isk(item.profit)} profit`}
                     </span>
                   </div>
                 ))}

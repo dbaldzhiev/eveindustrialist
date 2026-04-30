@@ -11,6 +11,7 @@ import {
   fetchSuggestedPlan, fetchBlueprints, fetchWarehouse,
   updatePlanItemApi,
 } from "../api/client";
+import { copyToClipboard } from "../api/clipboard";
 import type { SuggestResult, BlueprintSearchResult } from "../api/client";
 import type {
   Character, Plan, PlanItem, PlanStats, PlanShoppingResult,
@@ -260,7 +261,7 @@ function PlanDetail({ plan, charNameMap, onClose, onRename, onDelete }: {
 
   const copyMultibuy = () => {
     if (!shopping?.multibuy) return;
-    navigator.clipboard.writeText(shopping.multibuy).then(() => {
+    copyToClipboard(shopping.multibuy, () => {
       setCopied(true); setTimeout(() => setCopied(false), 2000);
     });
   };
@@ -539,23 +540,25 @@ interface BpVariant {
   me:     number;
   te:     number;
   is_bpo: boolean;
-  copies: (BlueprintResult & { shoppingCost?: number })[]; // individual physical copies, sorted runs desc
+  copies: (BlueprintResult & { shoppingCost?: number; warehouseValue?: number })[]; // individual physical copies, sorted runs desc
 }
 
 interface BpGroup {
   name:     string;
   variants: BpVariant[];
   minGroupCost?: number;
+  maxGroupWhValue?: number;
 }
 
 function BpCopyRow({
-  bp, noPrices, eligibilityMap, onAdd, sortByShoppingCost,
+  bp, noPrices, eligibilityMap, onAdd, sortByShoppingCost, sortByWarehouseValue,
 }: {
-  bp: BlueprintResult & { shoppingCost?: number };
+  bp: BlueprintResult & { shoppingCost?: number; warehouseValue?: number };
   noPrices: boolean;
   eligibilityMap: Map<number, EligibleChar[]>;
   onAdd: (bp: BlueprintResult, runs: number) => void;
   sortByShoppingCost: boolean;
+  sortByWarehouseValue: boolean;
 }) {
   const maxRuns = bp.is_bpo ? 1 : bp.runs;
   const profitPerRun = bp.runs > 0 ? bp.profit / bp.runs : 0;
@@ -579,6 +582,11 @@ function BpCopyRow({
           {sortByShoppingCost && bp.shoppingCost !== undefined && (
             <span className="text-[10px] text-eve-orange font-mono font-semibold">
               Buy: {isk(bp.shoppingCost)}
+            </span>
+          )}
+          {sortByWarehouseValue && bp.warehouseValue !== undefined && (
+            <span className="text-[10px] text-blue-400 font-mono font-semibold">
+              Wh: {isk(bp.warehouseValue)}
             </span>
           )}
         </div>
@@ -609,13 +617,14 @@ function BpCopyRow({
 }
 
 function BpVariantSection({
-  variant, noPrices, eligibilityMap, onAdd, sortByShoppingCost,
+  variant, noPrices, eligibilityMap, onAdd, sortByShoppingCost, sortByWarehouseValue,
 }: {
   variant: BpVariant;
   noPrices: boolean;
   eligibilityMap: Map<number, EligibleChar[]>;
   onAdd: (bp: BlueprintResult, runs: number) => void;
   sortByShoppingCost: boolean;
+  sortByWarehouseValue: boolean;
 }) {
   const runsList = variant.copies.map(c => c.runs);
   const variantProfit = variant.copies.reduce((s, c) => s + c.profit, 0);
@@ -652,6 +661,7 @@ function BpVariantSection({
             key={copy.item_id ?? `${copy.me}-${copy.te}-${copy.runs}-${i}`}
             bp={copy} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd}
             sortByShoppingCost={sortByShoppingCost}
+            sortByWarehouseValue={sortByWarehouseValue}
           />
         ))}
       </div>
@@ -661,7 +671,7 @@ function BpVariantSection({
 
 
 function BpGroupRow({
-  group, expanded, noPrices, eligibilityMap, onToggle, onAdd, sortByShoppingCost,
+  group, expanded, noPrices, eligibilityMap, onToggle, onAdd, sortByShoppingCost, sortByWarehouseValue,
 }: {
   group: BpGroup;
   expanded: boolean;
@@ -670,6 +680,7 @@ function BpGroupRow({
   onToggle: () => void;
   onAdd: (bp: BlueprintResult, runs: number) => void;
   sortByShoppingCost: boolean;
+  sortByWarehouseValue: boolean;
 }) {
   const isSingle = group.variants.length === 1 && group.variants[0].copies.length === 1;
   const totalBpcCopies = group.variants
@@ -691,6 +702,11 @@ function BpGroupRow({
                 Buy: {isk(group.minGroupCost)}
               </span>
             )}
+            {sortByWarehouseValue && group.maxGroupWhValue !== undefined && (
+              <span className="text-[9px] text-blue-400 font-mono font-semibold">
+                Wh: {isk(group.maxGroupWhValue)}
+              </span>
+            )}
             {!noPrices && (
               <span className={`text-[9px] font-mono font-semibold
                                 ${groupProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
@@ -699,7 +715,7 @@ function BpGroupRow({
             )}
           </div>
         </div>
-        <BpVariantSection variant={group.variants[0]} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd} sortByShoppingCost={sortByShoppingCost} />
+        <BpVariantSection variant={group.variants[0]} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd} sortByShoppingCost={sortByShoppingCost} sortByWarehouseValue={sortByWarehouseValue} />
       </div>
     );
   }
@@ -718,6 +734,11 @@ function BpGroupRow({
           {sortByShoppingCost && group.minGroupCost !== undefined && (
             <span className="text-[9px] text-eve-orange font-mono font-semibold">
               Buy: {isk(group.minGroupCost)}
+            </span>
+          )}
+          {sortByWarehouseValue && group.maxGroupWhValue !== undefined && (
+            <span className="text-[9px] text-blue-400 font-mono font-semibold">
+              Wh: {isk(group.maxGroupWhValue)}
             </span>
           )}
           {!noPrices && (
@@ -745,6 +766,7 @@ function BpGroupRow({
               key={`${variant.me}-${variant.te}-${String(variant.is_bpo)}`}
               variant={variant} noPrices={noPrices} eligibilityMap={eligibilityMap} onAdd={onAdd}
               sortByShoppingCost={sortByShoppingCost}
+              sortByWarehouseValue={sortByWarehouseValue}
             />
           ))}
         </div>
@@ -778,6 +800,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
   const [showProfitableOnly, setShowProfitableOnly] = useState(false);
   const [hideBpos, setHideBpos] = useState(false);
   const [sortByShoppingCost, setSortByShoppingCost] = useState(false);
+  const [sortByWarehouseValue, setSortByWarehouseValue] = useState(false);
 
   // Holds the settings used to load BPs (so we can save plan items with correct me/te/runs)
   const simSettingsRef = useRef<Settings>(DEFAULT_SETTINGS);
@@ -854,11 +877,13 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
       (!hideBpos || !!!bp.is_bpo)
     );
 
-    // 2. Pre-calculate shopping cost for each blueprint if sorting is enabled
+    // 2. Pre-calculate costs and warehouse values if sorting is enabled
     const bpCosts = new Map<string, number>();
-    if (sortByShoppingCost) {
+    const bpWhValues = new Map<string, number>();
+    if (sortByShoppingCost || sortByWarehouseValue) {
       filtered.forEach(bp => {
         let cost = 0;
+        let whValue = 0;
         // BPO cost is calculated for 1 run (initial add), BPC for its full runs.
         const targetRuns = (!!bp.is_bpo) ? 1 : bp.runs;
         const scale = bp.runs > 0 ? targetRuns / bp.runs : 1;
@@ -867,9 +892,13 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
           const inStock = Math.max(0, remainingWarehouse[m.type_id] || 0);
           const needed = Math.ceil(m.quantity * scale);
           const toBuy = Math.max(0, needed - inStock);
+          const usedFromWh = Math.min(needed, inStock);
           cost += toBuy * m.unit_price;
+          whValue += usedFromWh * m.unit_price;
         });
-        bpCosts.set(bp.item_id ? bp.item_id.toString() : `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.runs}`, cost);
+        const key = bp.item_id ? bp.item_id.toString() : `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.runs}`;
+        bpCosts.set(key, cost);
+        bpWhValues.set(key, whValue);
       });
     }
 
@@ -892,32 +921,48 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
             me: vCopies[0].me,
             te: vCopies[0].te,
             is_bpo: vCopies[0].is_bpo,
-            copies: vCopies.slice().sort((a, b) => b.runs - a.runs).map(cp => ({
-              ...cp,
-              shoppingCost: bpCosts.get(cp.item_id ? cp.item_id.toString() : `${cp.blueprint_type_id}-${cp.me}-${cp.te}-${cp.runs}`),
-            })),
+            copies: vCopies.slice().sort((a, b) => b.runs - a.runs).map(cp => {
+              const key = cp.item_id ? cp.item_id.toString() : `${cp.blueprint_type_id}-${cp.me}-${cp.te}-${cp.runs}`;
+              return {
+                ...cp,
+                shoppingCost: bpCosts.get(key),
+                warehouseValue: bpWhValues.get(key),
+              };
+            }),
           }))
           .sort((a, b) => {
             if (a.is_bpo !== b.is_bpo) return a.is_bpo ? -1 : 1;
             return b.me - a.me;
           });
         
-        // Calculate min shopping cost for this group if sorting
+        // Calculate group metrics for sorting
         let minGroupCost = 0;
+        let maxGroupWhValue = 0;
         if (sortByShoppingCost) {
-          minGroupCost = Math.min(...copies.map(bp => bpCosts.get(bp.item_id ? bp.item_id.toString() : `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.runs}`) ?? 0));
+          minGroupCost = Math.min(...copies.map(bp => {
+            const key = bp.item_id ? bp.item_id.toString() : `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.runs}`;
+            return bpCosts.get(key) ?? 0;
+          }));
+        }
+        if (sortByWarehouseValue) {
+          maxGroupWhValue = Math.max(...copies.map(bp => {
+            const key = bp.item_id ? bp.item_id.toString() : `${bp.blueprint_type_id}-${bp.me}-${bp.te}-${bp.runs}`;
+            return bpWhValues.get(key) ?? 0;
+          }));
         }
 
-        return { name, variants, minGroupCost };
+        return { name, variants, minGroupCost, maxGroupWhValue };
       });
 
     // 3. Sort groups
     if (sortByShoppingCost) {
       return result.sort((a, b) => (a.minGroupCost ?? 0) - (b.minGroupCost ?? 0) || a.name.localeCompare(b.name));
+    } else if (sortByWarehouseValue) {
+      return result.sort((a, b) => (b.maxGroupWhValue ?? 0) - (a.maxGroupWhValue ?? 0) || a.name.localeCompare(b.name));
     } else {
       return result.sort((a, b) => a.name.localeCompare(b.name));
     }
-  }, [blueprints, search, showProfitableOnly, hideBpos, sortByShoppingCost, remainingWarehouse]);
+  }, [blueprints, search, showProfitableOnly, hideBpos, sortByShoppingCost, sortByWarehouseValue, remainingWarehouse]);
 
   const toggleGroup = useCallback((name: string) => {
     setExpandedGroups(prev => {
@@ -1007,7 +1052,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
 
   const copyMultibuy = () => {
     if (!multibuyText) return;
-    navigator.clipboard.writeText(multibuyText).then(() => {
+    copyToClipboard(multibuyText, () => {
       setCopied(true); setTimeout(() => setCopied(false), 2000);
     });
   };
@@ -1117,11 +1162,26 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
                 </label>
                 <label className="flex items-center gap-1.5 text-[10px] text-eve-muted cursor-pointer select-none group">
                   <input type="checkbox" checked={sortByShoppingCost}
-                    onChange={e => setSortByShoppingCost(e.target.checked)}
+                    onChange={e => {
+                      setSortByShoppingCost(e.target.checked);
+                      if (e.target.checked) setSortByWarehouseValue(false);
+                    }}
                     className="accent-eve-orange" />
                   Sort by Shopping Cost
                   <span className="hidden group-hover:inline ml-1 text-[9px] text-eve-orange/60">
                     (Minimizes ISK to buy)
+                  </span>
+                </label>
+                <label className="flex items-center gap-1.5 text-[10px] text-eve-muted cursor-pointer select-none group">
+                  <input type="checkbox" checked={sortByWarehouseValue}
+                    onChange={e => {
+                      setSortByWarehouseValue(e.target.checked);
+                      if (e.target.checked) setSortByShoppingCost(false);
+                    }}
+                    className="accent-eve-orange" />
+                  Sort by Warehouse Value
+                  <span className="hidden group-hover:inline ml-1 text-[9px] text-blue-400/60">
+                    (Maximizes owned mats used)
                   </span>
                 </label>
               </div>
@@ -1143,6 +1203,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
                     onToggle={() => toggleGroup(group.name)}
                     onAdd={addToQueue}
                     sortByShoppingCost={sortByShoppingCost}
+                    sortByWarehouseValue={sortByWarehouseValue}
                   />
                 ))
               )}

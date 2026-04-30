@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Navbar from "../components/Navbar";
 import { fetchSellerPrices, fetchMarketHubs, fetchAppSettings, type SellerItem } from "../api/client";
+import { copyToClipboard as sharedCopyToClipboard } from "../api/clipboard";
 import type { Character, MarketHub } from "../types";
 
 interface Props {
@@ -45,47 +46,16 @@ export default function SellerPage({ character }: Props) {
     setError(null);
   };
 
-  const copyToClipboard = (text: string) => {
-    // Try modern API first
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).catch(err => {
-        console.error("Modern clipboard API failed: ", err);
-        fallbackCopyTextToClipboard(text);
-      });
-    } else {
-      fallbackCopyTextToClipboard(text);
-    }
-  };
-
-  const fallbackCopyTextToClipboard = (text: string) => {
-    const textArea = document.createElement("textarea");
-    textArea.value = text;
-    
-    // Ensure the textarea is not visible but part of the DOM
-    textArea.style.position = "fixed";
-    textArea.style.left = "-9999px";
-    textArea.style.top = "0";
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-
-    try {
-      const successful = document.execCommand("copy");
-      if (!successful) {
-        console.error("Fallback copy failed");
-      }
-    } catch (err) {
-      console.error("Fallback copy exception: ", err);
-    }
-
-    document.body.removeChild(textArea);
+  const copyToClipboard = (text: string, onSuccess?: () => void) => {
+    sharedCopyToClipboard(text, onSuccess);
   };
 
   const copyAllPrices = () => {
     const lines = items.map(item => `${item.name} ${item.undercut_price.toFixed(2)}`).join("\n");
-    copyToClipboard(lines);
-    setCopiedAll(true);
-    setTimeout(() => setCopiedAll(false), 2000);
+    copyToClipboard(lines, () => {
+      setCopiedAll(true);
+      setTimeout(() => setCopiedAll(false), 2000);
+    });
   };
 
   const formatIsk = (val: number) => 

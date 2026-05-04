@@ -27,6 +27,8 @@ export default function WarehousePage({ character }: Props) {
   const [locSearch, setLocSearch]     = useState("");
 
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [sortField, setSortField] = useState<string>("total_value");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const [syncing, setSyncing]         = useState(false);
 
@@ -100,9 +102,44 @@ export default function WarehousePage({ character }: Props) {
   }, [items]);
 
   const filtered = useMemo(() => {
-    if (selectedCategories.length === 0) return items;
-    return items.filter(i => i.category_name && selectedCategories.includes(i.category_name));
-  }, [items, selectedCategories]);
+    let base = selectedCategories.length === 0 
+      ? items 
+      : items.filter(i => i.category_name && selectedCategories.includes(i.category_name));
+    
+    return [...base].sort((a, b) => {
+      let valA: any = 0;
+      let valB: any = 0;
+
+      if (sortField === "type_name") {
+        return sortOrder === "asc" 
+          ? a.type_name.localeCompare(b.type_name) 
+          : b.type_name.localeCompare(a.type_name);
+      } else if (sortField === "quantity") {
+        valA = a.quantity;
+        valB = b.quantity;
+      } else if (sortField === "estimated_price") {
+        valA = a.estimated_price || 0;
+        valB = b.estimated_price || 0;
+      } else if (sortField === "total_value") {
+        valA = (a.estimated_price || 0) * a.quantity;
+        valB = (b.estimated_price || 0) * b.quantity;
+      }
+
+      if (valA < valB) return sortOrder === "asc" ? -1 : 1;
+      if (valA > valB) return sortOrder === "asc" ? 1 : -1;
+      
+      return a.type_name.localeCompare(b.type_name);
+    });
+  }, [items, selectedCategories, sortField, sortOrder]);
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortOrder("desc");
+    }
+  };
 
   const filteredLocs = useMemo(() => {
     return locations.filter(l => 
@@ -273,10 +310,18 @@ export default function WarehousePage({ character }: Props) {
             <table className="w-full text-left text-sm border-collapse">
               <thead>
                 <tr className="bg-eve-bg/50 text-eve-muted text-[10px] uppercase tracking-wider font-bold border-b border-eve-border">
-                  <th className="px-4 py-3">Item / Category</th>
-                  <th className="px-4 py-3 text-right">Quantity</th>
-                  <th className="px-4 py-3 text-right">Est. Unit Price</th>
-                  <th className="px-4 py-3 text-right">Total Value</th>
+                  <th className="px-4 py-3 cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort("type_name")}>
+                    Item / Category {sortField === "type_name" && (sortOrder === "asc" ? "↑" : "↓")}
+                  </th>
+                  <th className="px-4 py-3 text-right cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort("quantity")}>
+                    Quantity {sortField === "quantity" && (sortOrder === "asc" ? "↑" : "↓")}
+                  </th>
+                  <th className="px-4 py-3 text-right cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort("estimated_price")}>
+                    Est. Unit Price {sortField === "estimated_price" && (sortOrder === "asc" ? "↑" : "↓")}
+                  </th>
+                  <th className="px-4 py-3 text-right cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort("total_value")}>
+                    Total Value {sortField === "total_value" && (sortOrder === "asc" ? "↑" : "↓")}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-eve-border/50">

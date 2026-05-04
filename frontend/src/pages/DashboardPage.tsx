@@ -43,8 +43,9 @@ export default function DashboardPage({ character }: Props) {
   const [showBpo, setShowBpo]                   = useState(true);
   const [showBpc, setShowBpc]                   = useState(true);
   const [showProfitable, setShowProfitable]     = useState(true);
-  const [showUnprofitable, setShowUnprofitable] = useState(true);
+  const [showUnprofitable, setShowUnprofitable] = useState(false);
   const [showGroups, setShowGroups]             = useState(true);
+  const [showPotential, setShowPotential]       = useState(true);
 
   // Fetch global settings and auto-calculate; re-run when prices are globally refreshed
   useEffect(() => {
@@ -80,7 +81,7 @@ export default function DashboardPage({ character }: Props) {
 
         if (newSettings.solar_system_id && newSettings.solar_system_id > 0) {
           const forceRefresh = pricesKey > 0;
-          const results = await fetchBlueprints({ ...newSettings, min_profit: -1e15 }, forceRefresh, "build");
+          const results = await fetchBlueprints({ ...newSettings, min_profit: -1e15 }, forceRefresh, "dashboard");
           setBlueprints(results);
           setHasLoaded(true);
         } else {
@@ -102,15 +103,19 @@ export default function DashboardPage({ character }: Props) {
 
   const filtered = useMemo(() => {
     return blueprints.filter((bp) => {
-      // BPO/BPC filter
-      if (bp.is_bpo && !showBpo) return false;
-      if (!bp.is_bpo && !showBpc) return false;
+      // Potential inventions filter
+      if (bp.is_invention && !showPotential) return false;
+      // BPO/BPC filter (for non-potential)
+      if (!bp.is_invention) {
+        if (bp.is_bpo && !showBpo) return false;
+        if (!bp.is_bpo && !showBpc) return false;
+      }
       // Profitability filter
       if (bp.profit > 0 && !showProfitable) return false;
       if (bp.profit <= 0 && !showUnprofitable) return false;
       return true;
     });
-  }, [blueprints, showBpo, showBpc, showProfitable, showUnprofitable]);
+  }, [blueprints, showBpo, showBpc, showProfitable, showUnprofitable, showPotential]);
 
   return (
     <div className="min-h-screen bg-eve-bg font-eve">
@@ -133,6 +138,7 @@ export default function DashboardPage({ character }: Props) {
                   <div className="flex gap-1">
                     <FilterToggle label="BPO" active={showBpo} onClick={() => setShowBpo(!showBpo)} />
                     <FilterToggle label="BPC" active={showBpc} onClick={() => setShowBpc(!showBpc)} />
+                    <FilterToggle label="Potential" active={showPotential} onClick={() => setShowPotential(!showPotential)} />
                   </div>
                 </div>
 
@@ -158,17 +164,26 @@ export default function DashboardPage({ character }: Props) {
         )}
 
         {hasLoaded && !loading && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard label="Blueprints found" value={blueprints.length.toString()} />
-            <StatCard label="Profitable"        value={profitable.toString()} accent />
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            <StatCard label="Matches" value={filtered.length.toString()} />
+            <StatCard label="Profitable" value={filtered.filter(b => b.profit > 0).length.toString()} accent />
             <StatCard
-              label="Best profit"
-              value={blueprints.length > 0 ? fmtISK(Math.max(...blueprints.map((b) => b.profit))) : "–"}
+              label="Shop (Missing)"
+              value={fmtISK(filtered.reduce((acc, b) => acc + (b.shopping_cost || 0), 0))}
               accent
             />
             <StatCard
-              label="Best margin"
-              value={blueprints.length > 0 ? Math.max(...blueprints.map((b) => b.margin_pct)).toFixed(1) + "%" : "–"}
+              label="WH (In Stock)"
+              value={fmtISK(filtered.reduce((acc, b) => acc + (b.warehouse_value_used || 0), 0))}
+            />
+            <StatCard
+              label="Best Profit"
+              value={filtered.length > 0 ? fmtISK(Math.max(...filtered.map((b) => b.profit))) : "–"}
+              accent
+            />
+            <StatCard
+              label="Best Margin"
+              value={filtered.length > 0 ? Math.max(...filtered.map((b) => b.margin_pct)).toFixed(1) + "%" : "–"}
             />
           </div>
         )}

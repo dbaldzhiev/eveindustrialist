@@ -31,6 +31,8 @@ export interface MaterialLine {
   quantity:   number;
   unit_price: number;
   total_cost: number;
+  in_stock?:  number;
+  to_buy?:    number;
 }
 
 export interface MarketStats {
@@ -79,6 +81,18 @@ export interface BlueprintResult {
   materials: MaterialLine[];
   category_name?: string;
   tech_level?: number;
+
+  // New fields for dashboard aggregation
+  warehouse_value_used?: number;
+  shopping_cost?:        number;
+  profit_per_run?:       number;
+  profit_per_unit?:      number;
+  invent_cost?:          number;
+  invent_materials?:     MaterialLine[];
+  base_bpc_info?: {
+    count: number;
+    runs:  number;
+  };
 }
 
 export type SortKey =
@@ -88,7 +102,9 @@ export type SortKey =
   | "isk_per_hour"
   | "material_cost"
   | "total_cost"
-  | "revenue";
+  | "revenue"
+  | "shopping_cost"
+  | "warehouse_value_used";
 
 export interface Settings {
   solar_system_id:      number | null;

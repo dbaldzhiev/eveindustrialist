@@ -221,6 +221,12 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
               <th className="px-4 py-3 text-right cursor-pointer hover:text-eve-text" onClick={() => toggleSort("profit")}>
                 Total Profit {sortKey === "profit" && (sortOrder === "asc" ? "↑" : "↓")}
               </th>
+              <th className="px-4 py-3 text-right cursor-pointer hover:text-eve-text" onClick={() => toggleSort("shopping_cost")}>
+                Shopping {sortKey === "shopping_cost" && (sortOrder === "asc" ? "↑" : "↓")}
+              </th>
+              <th className="px-4 py-3 text-right cursor-pointer hover:text-eve-text" onClick={() => toggleSort("warehouse_value_used")}>
+                Warehouse {sortKey === "warehouse_value_used" && (sortOrder === "asc" ? "↑" : "↓")}
+              </th>
               <th className="px-4 py-3 text-right cursor-pointer hover:text-eve-text" onClick={() => toggleSort("margin_pct")}>
                 Margin {sortKey === "margin_pct" && (sortOrder === "asc" ? "↑" : "↓")}
               </th>
@@ -274,7 +280,20 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                         )}
                       </td>
                       <td className={`px-4 py-3 text-right font-bold ${bp.profit > 0 ? "text-green-400" : "text-red-400"}`}>
-                        {fmtISK(bp.profit)}
+                        <div className="flex flex-col">
+                          <span>{fmtISK(bp.profit)}</span>
+                          {bp.profit_per_run && (
+                            <span className="text-[10px] text-eve-muted font-normal">
+                              {fmtISK(bp.profit_per_run)} / run
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right text-red-400 font-mono text-[11px]">
+                        {bp.shopping_cost > 0 ? fmtISK(bp.shopping_cost) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right text-green-400 font-mono text-[11px]">
+                        {bp.warehouse_value_used > 0 ? fmtISK(bp.warehouse_value_used) : "—"}
                       </td>
                       <td className={`px-4 py-3 text-right font-medium ${bp.margin_pct > 0 ? "text-green-500/80" : "text-red-500/80"}`}>
                         {PCT_FORMAT.format(bp.margin_pct)}%
@@ -332,7 +351,7 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                                       </div>
                                     </div>
 
-                                    {activity === "invent" && (
+                                    {(activity === "invent" || v.is_invention) && (
                                       <div className="border-t border-eve-border/20 pt-2 mt-1 grid grid-cols-2 gap-4">
                                         <div>
                                           <div className="text-[9px] uppercase text-eve-muted font-bold mb-1">Invention Materials</div>
@@ -393,7 +412,11 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                           <span className="text-blue-400">ME {bp.me}</span>
                           <span className="text-purple-400">TE {bp.te}</span>
                           {bp.decryptor_name && <span className="text-eve-orange">D: {bp.decryptor_name}</span>}
-                          {bp.is_bpo ? <span className="text-green-500 font-bold uppercase">BPO</span> : <span className="text-yellow-500 font-bold uppercase">BPC</span>}
+                          {bp.is_invention ? (
+                            <span className="text-purple-400 font-bold uppercase">Potential</span>
+                          ) : (
+                            bp.is_bpo ? <span className="text-green-500 font-bold uppercase">BPO</span> : <span className="text-yellow-500 font-bold uppercase">BPC</span>
+                          )}
                         </div>
                         {bp.market_stats && bp.market_stats.vol_7d > 0 && (
                           <MarketStatsInline stats={bp.market_stats} />
@@ -409,7 +432,20 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                       )}
                     </td>
                     <td className={`px-4 py-3 text-right font-bold ${bp.profit > 0 ? "text-green-400" : "text-red-400"}`}>
-                      {fmtISK(bp.profit)}
+                      <div className="flex flex-col">
+                        <span>{fmtISK(bp.profit)}</span>
+                        {bp.profit_per_run && (
+                          <span className="text-[10px] text-eve-muted font-normal">
+                            {fmtISK(bp.profit_per_run)} / run
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-red-400 font-mono text-[11px]">
+                      {bp.shopping_cost > 0 ? fmtISK(bp.shopping_cost) : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-green-400 font-mono text-[11px]">
+                      {bp.warehouse_value_used > 0 ? fmtISK(bp.warehouse_value_used) : "—"}
                     </td>
                     <td className={`px-4 py-3 text-right font-medium ${bp.margin_pct > 0 ? "text-green-500/80" : "text-red-500/80"}`}>
                       {PCT_FORMAT.format(bp.margin_pct)}%
@@ -454,11 +490,21 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                             </h4>
                             <div className="space-y-1.5">
                               {bp.materials.map((mat: any) => (
-                                <div key={mat.type_id} className="flex justify-between text-xs group/mat">
-                                  <span className="text-eve-text group-hover/mat:text-eve-orange transition-colors">
-                                    {mat.name}
-                                  </span>
-                                  <div className="flex gap-4">
+                                <div key={mat.type_id} className="flex justify-between text-xs group/mat py-0.5">
+                                  <div className="flex flex-col">
+                                    <span className="text-eve-text group-hover/mat:text-eve-orange transition-colors">
+                                      {mat.name}
+                                    </span>
+                                    {mat.in_stock !== undefined && (
+                                      <div className="flex gap-2 text-[9px] uppercase font-bold">
+                                        <span className="text-eve-muted/80">Stock: <span className={mat.in_stock >= mat.quantity ? "text-green-400" : "text-yellow-500"}>{mat.in_stock.toLocaleString()}</span></span>
+                                        {mat.to_buy > 0 && (
+                                          <span className="text-red-400">Missing: {mat.to_buy.toLocaleString()}</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-4 items-center">
                                     <span className="text-eve-muted">
                                       {mat.quantity.toLocaleString()} × {fmtISK(mat.unit_price)}
                                     </span>
@@ -482,7 +528,7 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                         )}
 
                         {/* Invention data row */}
-                        {activity === "invent" && (
+                        {(activity === "invent" || bp.is_invention) && (
                           <div className="mt-8 pt-6 border-t border-eve-border/30 grid grid-cols-1 lg:grid-cols-2 gap-8">
                              {/* Invention Materials */}
                              <div className="space-y-4">
@@ -492,11 +538,13 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                                </h4>
                                <div className="space-y-1.5">
                                  {bp.invent_materials?.map((mat: any) => (
-                                   <div key={mat.type_id} className="flex justify-between text-xs group/mat">
-                                     <span className="text-eve-text group-hover/mat:text-eve-orange transition-colors">
-                                       {mat.name}
-                                     </span>
-                                     <div className="flex gap-4">
+                                   <div key={mat.type_id} className="flex justify-between text-xs group/mat py-0.5">
+                                      <div className="flex flex-col">
+                                        <span className="text-eve-text group-hover/mat:text-eve-orange transition-colors">
+                                          {mat.name}
+                                        </span>
+                                      </div>
+                                     <div className="flex gap-4 items-center">
                                        <span className="text-eve-muted">
                                          {mat.quantity.toLocaleString()} × {fmtISK(mat.unit_price)}
                                        </span>

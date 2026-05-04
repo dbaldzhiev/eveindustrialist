@@ -93,6 +93,29 @@ def _primary(session: str | None) -> int:
     return get_primary_id(session)
 
 
+def _get_warehouse_map(primary_id: int) -> dict[int, int]:
+    settings = get_user_settings(primary_id)
+    wh_char = settings.get("warehouse_character_id")
+    wh_loc  = settings.get("warehouse_location_id")
+
+    items = []
+    if wh_char and wh_loc:
+        items = get_assets_at_location(wh_char, wh_loc)
+    else:
+        char_ids = get_group_character_ids(primary_id)
+        grouped: dict[int, int] = {}
+        for cid in char_ids:
+            assets = get_cached_assets(cid)
+            if assets:
+                for item in assets:
+                    if item.get("is_container"): continue
+                    tid = item["type_id"]
+                    grouped[tid] = grouped.get(tid, 0) + item.get("quantity", 1)
+        return grouped
+    
+    return {i["type_id"]: i["quantity"] for i in items}
+
+
 def _profit_settings(
     runs: int, broker_fee: float, sales_tax: float, facility_tax: float,
     structure_me_bonus: float, structure_te_bonus: float, structure_cost_bonus: float,
@@ -136,9 +159,10 @@ def _calc_profits_for_bps(
             char_bps = [bp for bp in char_bps if bp.get("item_id") not in in_use]
 
     bp_type_ids = [bp["type_id"] for bp in char_bps]
+    warehouse_map = _get_warehouse_map(primary_id) if primary_id else {}
 
     invention_bps = []
-    if mode == "invent":
+    if mode in ["invent", "dashboard"]:
         unique_ids = list(set(bp_type_ids))
         variants = get_invention_variants(unique_ids)
         
@@ -185,7 +209,11 @@ def _calc_profits_for_bps(
                     "invent_materials": invent_data.get(var["base_bp_id"], {}).get("materials", []),
                     "base_bpc_info":    base_bpc_counts.get(var["base_bp_id"], {"count": 0, "runs": 0}),
                 })
+        
+    if mode == "invent":
         all_calc_bps = invention_bps
+    elif mode == "dashboard":
+        all_calc_bps = char_bps + invention_bps
     elif mode == "copy":
         # Only owned BPOs that are NOT reactions (reactions can't be copied)
         reaction_ids = set(get_reaction_bp_ids())
@@ -341,12 +369,58 @@ def _calc_profits_for_bps(
                     d["item_id"] = bp["item_id"]
                 if bp.get("character_id"):
                     d["character_ids"] = [bp["character_id"]]
+                
+                # Warehouse / Shopping calculation
+                wh_val_used = 0.0
+                shop_cost   = 0.0
+                for mat in d.get("materials", []):
+                    tid = mat["type_id"]
+                    needed = mat["quantity"]
+                    in_stock = warehouse_map.get(tid, 0)
+                    used_from_stock = min(needed, in_stock)
+                    missing = max(0, needed - in_stock)
+                    
+                    wh_val_used += used_from_stock * mat["unit_price"]
+                    shop_cost   += missing * mat["unit_price"]
+                    
+                    mat["in_stock"] = in_stock
+                    mat["to_buy"]   = missing
+                
+                d["warehouse_value_used"] = round(wh_val_used, 2)
+                d["shopping_cost"]        = round(shop_cost, 2)
+
+                # Granular stats
+                runs_count = d["runs"]
+                total_qty  = d["product_quantity"]
+                if runs_count > 0:
+                    d["profit_per_run"] = round(d["profit"] / runs_count, 2)
+                if total_qty > 0:
+                    d["profit_per_unit"] = round(d["profit"] / total_qty, 2)
+
                 results.append(d)
-        # Attach per-blueprint skill requirements for individual mode (always build, activityID=1)
-        bp_type_ids = list({r["blueprint_type_id"] for r in results})
-        skills_map  = get_blueprint_required_skills_batch(bp_type_ids, 1)
-        for r in results:
-            r["required_skills"] = skills_map.get(r["blueprint_type_id"], [])
+        
+        # Attach per-blueprint skill requirements
+        if mode == "dashboard":
+            build_ids  = [r["blueprint_type_id"] for r in results if not r.get("is_invention")]
+            invent_results = [r for r in results if r.get("is_invention")]
+            skills_map_build = get_blueprint_required_skills_batch(build_ids, 1)
+            for r in results:
+                if not r.get("is_invention"):
+                    r["required_skills"] = skills_map_build.get(r["blueprint_type_id"], [])
+            if invent_results:
+                source_id_map = {r["blueprint_type_id"]: r["source_type_id"] for r in invent_results if r.get("source_type_id")}
+                source_ids = list(set(source_id_map.values()))
+                skills_map_invent = get_blueprint_required_skills_batch(source_ids, 8)
+                for r in invent_results:
+                    src = source_id_map.get(r["blueprint_type_id"])
+                    r["required_skills"] = skills_map_invent.get(src, []) if src else []
+        else:
+            activity_id = 11 if mode == "react" else 1
+            bp_type_ids = list({r["blueprint_type_id"] for r in results})
+            skills_map  = get_blueprint_required_skills_batch(bp_type_ids, activity_id)
+            for r in results:
+                r["required_skills"] = skills_map.get(r["blueprint_type_id"], [])
+
         # Attach market history stats
         product_ids  = list({r["product_type_id"] for r in results})
         history_map  = get_market_history_stats(product_ids, price_region_id)
@@ -442,9 +516,38 @@ def _calc_profits_for_bps(
             d["category_name"] = category_map.get(d["product_type_id"], "Unknown")
             if bp.get("character_ids"):
                 d["character_ids"] = bp["character_ids"]
+
+            # Warehouse / Shopping calculation
+            wh_val_used = 0.0
+            shop_cost   = 0.0
+            for mat in d.get("materials", []):
+                tid = mat["type_id"]
+                needed = mat["quantity"]
+                in_stock = warehouse_map.get(tid, 0)
+                used_from_stock = min(needed, in_stock)
+                missing = max(0, needed - in_stock)
+                
+                wh_val_used += used_from_stock * mat["unit_price"]
+                shop_cost   += missing * mat["unit_price"]
+                
+                mat["in_stock"] = in_stock
+                mat["to_buy"]   = missing
+            
+            d["warehouse_value_used"] = round(wh_val_used, 2)
+            d["shopping_cost"]        = round(shop_cost, 2)
+
+            # Granular stats
+            runs_count = d["runs"]
+            total_qty  = d["product_quantity"]
+            if runs_count > 0:
+                d["profit_per_run"] = round(d["profit"] / runs_count, 2)
+            if total_qty > 0:
+                d["profit_per_unit"] = round(d["profit"] / total_qty, 2)
+
             if bp.get("is_invention") and bp.get("decryptor"):
                 d["is_invention"] = True
                 d["decryptor_name"] = bp["decryptor"]["name"]
+                d["source_type_id"] = bp.get("source_type_id")
                 
                 # Attach priced invention materials and metadata
                 inv_mats = []
@@ -488,6 +591,32 @@ def _calc_profits_for_bps(
         for r in results:
             src = source_id_map.get(r["blueprint_type_id"])
             r["required_skills"] = skills_map.get(src, []) if src else []
+    elif mode == "dashboard":
+        # Mix of build (1) and invent (8)
+        build_ids  = [r["blueprint_type_id"] for r in results if not r.get("is_invention")]
+        invent_results = [r for r in results if r.get("is_invention")]
+        
+        # Build skills
+        skills_map_build = get_blueprint_required_skills_batch(build_ids, 1)
+        for r in results:
+            if not r.get("is_invention"):
+                r["required_skills"] = skills_map_build.get(r["blueprint_type_id"], [])
+        
+        # Invent skills (on the source blueprint)
+        if invent_results:
+            source_id_map = {}
+            for r in invent_results:
+                # Find the source BP ID from the aggregated_bps if possible, or we need to pass it
+                # We already added source_type_id to aggregated_bps and d
+                src_id = r.get("source_type_id")
+                if src_id:
+                    source_id_map[r["blueprint_type_id"]] = src_id
+            
+            source_ids = list(set(source_id_map.values()))
+            skills_map_invent = get_blueprint_required_skills_batch(source_ids, 8)
+            for r in invent_results:
+                src = source_id_map.get(r["blueprint_type_id"])
+                r["required_skills"] = skills_map_invent.get(src, []) if src else []
     elif mode != "copy":
         activity_id = 11 if mode == "react" else 1
         type_ids = list({r["blueprint_type_id"] for r in results})

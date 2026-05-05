@@ -26,6 +26,7 @@ class MaterialLine:
     quantity:   int
     unit_price: float
     total_cost: float
+    volume:     float = 0.0
 
 
 @dataclass
@@ -47,6 +48,7 @@ class BlueprintProfit:
     isk_per_hour:      float
     sell_price:        float
     product_quantity:  int = 0
+    product_volume:    float = 0.0
     tech_level:        int = 1
     materials: list[MaterialLine] = field(default_factory=list)
 
@@ -69,6 +71,7 @@ class BlueprintProfit:
             "isk_per_hour":      round(self.isk_per_hour, 2),
             "sell_price":        round(self.sell_price, 2),
             "product_quantity":  self.product_quantity,
+            "product_volume":    round(self.product_volume, 2),
             "tech_level":        self.tech_level,
         }
         if include_materials:
@@ -79,6 +82,7 @@ class BlueprintProfit:
                     "quantity":   m.quantity,
                     "unit_price": round(m.unit_price, 2),
                     "total_cost": round(m.total_cost, 2),
+                    "volume":     round(m.volume, 2),
                 }
                 for m in self.materials
             ]
@@ -122,10 +126,12 @@ def calculate_blueprint_profit(
     system_cost_index:  float,
     settings:           ProfitSettings,
     tech_level:         int = 1,
+    volumes:            dict[int, float] = None,
 ) -> "BlueprintProfit | None":
     if not sde_products:
         return None
 
+    volumes = volumes or {}
     product         = sde_products[0]
     product_type_id = product["type_id"]
     sell_price      = market_prices.get(product_type_id, {}).get(settings.product_order_type, 0.0)
@@ -151,6 +157,7 @@ def calculate_blueprint_profit(
         material_lines.append(MaterialLine(
             type_id=mat["type_id"], name=mat["name"],
             quantity=qty, unit_price=price, total_cost=line_cost,
+            volume=volumes.get(mat["type_id"], 0.0)
         ))
 
     structure_discount = 1.0 - settings.structure_cost_bonus
@@ -204,5 +211,6 @@ def calculate_blueprint_profit(
         profit=profit, margin_pct=margin_pct,
         isk_per_hour=isk_per_hour, sell_price=sell_price,
         materials=material_lines, product_quantity=total_qty,
+        product_volume=total_qty * volumes.get(product_type_id, 0.0),
         tech_level=final_tech_level,
     )

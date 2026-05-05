@@ -30,6 +30,15 @@ function fmtVol(n: number): string {
   return n.toFixed(0);
 }
 
+function fmtVolCompact(n: number): string {
+  if (n === 0) return "0";
+  if (n < 0.01) return n.toFixed(4);
+  if (n < 1) return n.toFixed(2);
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000)     return (n / 1_000).toFixed(1) + "K";
+  return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
 const TREND = {
   up:   { icon: "↑", cls: "text-green-400" },
   down: { icon: "↓", cls: "text-red-400"   },
@@ -477,9 +486,10 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                               <ExpandCard label="Single Run" value={fmtISK(bp.profit / Math.max(1, bp.runs))} />
                               <ExpandCard label="Full Job" value={fmtISK(bp.profit)} />
                             </div>
-                            <div className="grid grid-cols-2 gap-3 mt-4">
+                            <div className="grid grid-cols-3 gap-3 mt-4">
                                 <ExpandCard label="Unit Revenue" value={fmtISK(bp.sell_price)} />
                                 <ExpandCard label="Unit Cost" value={fmtISK(bp.total_cost / Math.max(1, bp.product_quantity))} />
+                                <ExpandCard label="Job Volume" value={fmtVolCompact(bp.product_volume) + " m³"} />
                             </div>
                           </div>
 
@@ -495,14 +505,15 @@ export default function BlueprintTable({ blueprints, activity, showGroups }: Pro
                                     <span className="text-eve-text group-hover/mat:text-eve-orange transition-colors">
                                       {mat.name}
                                     </span>
-                                    {mat.in_stock !== undefined && (
-                                      <div className="flex gap-2 text-[9px] uppercase font-bold">
+                                    <div className="flex gap-2 text-[9px] uppercase font-bold">
+                                      {mat.in_stock !== undefined && (
                                         <span className="text-eve-muted/80">Stock: <span className={mat.in_stock >= mat.quantity ? "text-green-400" : "text-yellow-500"}>{mat.in_stock.toLocaleString()}</span></span>
-                                        {mat.to_buy > 0 && (
-                                          <span className="text-red-400">Missing: {mat.to_buy.toLocaleString()}</span>
-                                        )}
-                                      </div>
-                                    )}
+                                      )}
+                                      {mat.to_buy > 0 && (
+                                        <span className="text-red-400">Missing: {mat.to_buy.toLocaleString()}</span>
+                                      )}
+                                      <span className="text-eve-muted/50">Vol: {fmtVolCompact(mat.quantity * mat.volume)}m³</span>
+                                    </div>
                                   </div>
                                   <div className="flex gap-4 items-center">
                                     <span className="text-eve-muted">

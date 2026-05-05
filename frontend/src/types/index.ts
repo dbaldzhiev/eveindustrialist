@@ -31,6 +31,7 @@ export interface MaterialLine {
   quantity:   number;
   unit_price: number;
   total_cost: number;
+  volume:     number;
   in_stock?:  number;
   to_buy?:    number;
 }
@@ -78,6 +79,7 @@ export interface BlueprintResult {
   isk_per_hour: number;
   sell_price: number;
   product_quantity: number;
+  product_volume:   number;
   materials: MaterialLine[];
   category_name?: string;
   tech_level?: number;
@@ -144,6 +146,7 @@ export interface WarehouseItem {
   location?: string;
   category_name?: string;
   estimated_price?: number;
+  volume?:   number;
 }
 
 export interface ShoppingMaterial {
@@ -152,6 +155,7 @@ export interface ShoppingMaterial {
   needed:   number;
   in_stock: number;
   to_buy:   number;
+  volume:   number;
 }
 
 export interface TypeResult {
@@ -230,6 +234,7 @@ export interface PlanItemStats {
   runs:           number;
   profit:         number;
   isk_per_hour:   number;
+  product_volume: number;
   character_id?:  number;
 }
 
@@ -237,6 +242,8 @@ export interface PlanItemStats {
 export interface PlanShoppingResult {
   materials: ShoppingMaterial[];
   multibuy:  string;
+  material_volume_m3: number;
+  output_volume_m3:   number;
 }
 
 // App settings (global, persisted on backend)

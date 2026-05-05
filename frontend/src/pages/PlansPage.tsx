@@ -421,6 +421,7 @@ function PlanDetail({ plan, charNameMap, onClose, onRename, onDelete }: {
                     <th className="px-3 py-2 text-left text-xs text-eve-muted">Blueprint</th>
                     <th className="px-3 py-2 text-left text-xs text-eve-muted">Product</th>
                     <th className="px-3 py-2 text-right text-xs text-eve-muted w-14">Runs</th>
+                    <th className="px-3 py-2 text-right text-xs text-eve-muted w-24">Volume</th>
                     <th className="px-3 py-2 text-right text-xs text-eve-muted w-28">Profit</th>
                     <th className="px-3 py-2 text-right text-xs text-eve-muted w-28">ISK/h</th>
                   </tr>
@@ -438,6 +439,7 @@ function PlanDetail({ plan, charNameMap, onClose, onRename, onDelete }: {
                       </td>
                       <td className="px-3 py-2 text-eve-text">{item.product_name}</td>
                       <td className="px-3 py-2 text-right text-eve-muted">{item.runs}</td>
+                      <td className="px-3 py-2 text-right text-eve-muted font-mono">{fmtVolCompact(item.product_volume)}m³</td>
                       <td className={`px-3 py-2 text-right font-mono ${item.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
                         {isk(item.profit)} ISK
                       </td>
@@ -470,6 +472,12 @@ function PlanDetail({ plan, charNameMap, onClose, onRename, onDelete }: {
                          disabled:opacity-40 text-eve-text text-sm rounded transition-colors">
               {loadingShopping ? "Loading…" : "Generate"}
             </button>
+            {shopping && (
+              <div className="flex gap-4 ml-auto text-xs text-eve-muted">
+                <span>Material: <span className="text-eve-text">{fmtVolCompact(shopping.material_volume_m3)}m³</span></span>
+                <span>Output: <span className="text-eve-text">{fmtVolCompact(shopping.output_volume_m3)}m³</span></span>
+              </div>
+            )}
           </div>
 
           {shopping && (
@@ -487,6 +495,7 @@ function PlanDetail({ plan, charNameMap, onClose, onRename, onDelete }: {
                           <th className="px-3 py-2 text-right text-xs text-eve-muted w-24">In Stock</th>
                         )}
                         <th className="px-3 py-2 text-right text-xs text-eve-muted w-24">To Buy</th>
+                        <th className="px-3 py-2 text-right text-xs text-eve-muted w-20">Vol</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -503,6 +512,7 @@ function PlanDetail({ plan, charNameMap, onClose, onRename, onDelete }: {
                             <td className="px-3 py-2 text-right font-mono text-blue-400">{fmtNum(m.in_stock)}</td>
                           )}
                           <td className="px-3 py-2 text-right font-mono text-eve-orange">{fmtNum(m.to_buy)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-eve-muted text-xs">{fmtVolCompact(m.to_buy * m.volume)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1007,19 +1017,22 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
   }, []);
 
   // Aggregate totals with linear scaling
-  const { totalProfit, totalMatCost, totalRevenue, aggregatedMats } = useMemo(() => {
-    let totalProfit = 0, totalMatCost = 0, totalRevenue = 0;
-    const matMap: Record<number, { name: string; needed: number; unit_price: number }> = {};
+  const { totalProfit, totalMatCost, totalRevenue, totalMatVol, totalOutVol, aggregatedMats } = useMemo(() => {
+    let totalProfit = 0, totalMatCost = 0, totalRevenue = 0, totalMatVol = 0, totalOutVol = 0;
+    const matMap: Record<number, { name: string; needed: number; unit_price: number; volume: number }> = {};
 
     queue.forEach(({ bp, chosen_runs }) => {
       const scale = bp.runs > 0 ? chosen_runs / bp.runs : 1;
       totalProfit   += bp.profit        * scale;
       totalMatCost  += bp.material_cost * scale;
       totalRevenue  += bp.revenue       * scale;
+      totalOutVol   += bp.product_volume * scale;
 
       bp.materials.forEach(m => {
-        if (!matMap[m.type_id]) matMap[m.type_id] = { name: m.name, needed: 0, unit_price: m.unit_price };
-        matMap[m.type_id].needed += Math.ceil(m.quantity * scale);
+        if (!matMap[m.type_id]) matMap[m.type_id] = { name: m.name, needed: 0, unit_price: m.unit_price, volume: m.volume };
+        const qty = Math.ceil(m.quantity * scale);
+        matMap[m.type_id].needed += qty;
+        totalMatVol += qty * m.volume;
       });
     });
 
@@ -1030,10 +1043,11 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
         needed:     info.needed,
         in_stock:   warehouse[parseInt(tid)] || 0,
         unit_price: info.unit_price,
+        volume:     info.volume,
       }))
       .sort((a, b) => b.needed - a.needed);
 
-    return { totalProfit, totalMatCost, totalRevenue, aggregatedMats };
+    return { totalProfit, totalMatCost, totalRevenue, totalMatVol, totalOutVol, aggregatedMats };
   }, [queue, warehouse]);
 
   const shoppingList = useMemo(() =>
@@ -1045,6 +1059,11 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
 
   const purchaseCost = useMemo(() =>
     shoppingList.reduce((s, m) => s + m.to_buy * m.unit_price, 0),
+    [shoppingList],
+  );
+
+  const purchaseVol = useMemo(() =>
+    shoppingList.reduce((s, m) => s + m.to_buy * m.volume, 0),
     [shoppingList],
   );
 
@@ -1243,6 +1262,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
                     {queue.map(item => {
                       const scale = item.bp.runs > 0 ? item.chosen_runs / item.bp.runs : 1;
                       const profit = item.bp.profit * scale;
+                      const vol = item.bp.product_volume * scale;
                       return (
                         <div key={item.id}
                           className="border border-eve-border/50 rounded px-3 py-2 flex items-center gap-2
@@ -1272,7 +1292,10 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
                               </span>
                               <CharacterMiniPortraits characters={eligibilityMap.get(item.bp.blueprint_type_id) ?? []} size={18} />
                             </div>
-                            <div className="text-[9px] text-eve-muted">{item.bp.product_name}</div>
+                            <div className="flex items-center justify-between mt-0.5">
+                              <div className="text-[9px] text-eve-muted">{item.bp.product_name}</div>
+                              <div className="text-[9px] text-eve-muted font-mono">{fmtVolCompact(vol)}m³</div>
+                            </div>
                           </div>
                           <div className="text-right shrink-0 min-w-[80px]">
                             {noPrices ? (
@@ -1301,7 +1324,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
               </div>
 
               {queue.length > 0 && (
-                <div className="p-3 border-t border-eve-border bg-eve-bg/30 grid grid-cols-3 gap-3">
+                <div className="p-3 border-t border-eve-border bg-eve-bg/30 grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
                     <div className="text-[9px] text-eve-muted uppercase tracking-wider">Mat Cost</div>
                     <div className="text-xs font-mono font-semibold text-eve-text">
@@ -1322,6 +1345,12 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
                       {noPrices ? "—" : isk(totalProfit) + " ISK"}
                     </div>
                   </div>
+                  <div>
+                    <div className="text-[9px] text-eve-muted uppercase tracking-wider">Total Volume</div>
+                    <div className="text-xs font-mono font-semibold text-eve-text">
+                      {fmtVolCompact(totalOutVol)}m³
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1333,12 +1362,17 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
                 <span className="text-[10px] uppercase font-bold text-eve-muted tracking-widest">
                   Materials — {aggregatedMats.length} types
                 </span>
-                <label className="flex items-center gap-2 text-[10px] text-eve-muted cursor-pointer select-none">
-                  <input type="checkbox" checked={useWarehouse}
-                    onChange={e => setUseWarehouse(e.target.checked)}
-                    className="accent-eve-orange" />
-                  Deduct Warehouse
-                </label>
+                <div className="flex items-center gap-4">
+                  <div className="text-[10px] text-eve-muted">
+                    Total: <span className="text-eve-text font-mono">{fmtVolCompact(totalMatVol)}m³</span>
+                  </div>
+                  <label className="flex items-center gap-2 text-[10px] text-eve-muted cursor-pointer select-none">
+                    <input type="checkbox" checked={useWarehouse}
+                      onChange={e => setUseWarehouse(e.target.checked)}
+                      className="accent-eve-orange" />
+                    Deduct Warehouse
+                  </label>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -1358,6 +1392,7 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
                           <th className="px-3 py-1.5 text-right text-[10px] text-eve-muted">In Stock</th>
                         )}
                         <th className="px-3 py-1.5 text-right text-[10px] text-eve-muted">To Buy</th>
+                        <th className="px-3 py-1.5 text-right text-[10px] text-eve-muted w-16">Vol</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1386,6 +1421,9 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
                                             ${toBuy > 0 ? "text-eve-orange" : "text-green-500"}`}>
                               {fmtNum(toBuy)}
                             </td>
+                            <td className="px-3 py-1 text-right font-mono text-eve-muted text-[10px]">
+                              {fmtVolCompact(toBuy * m.volume)}
+                            </td>
                           </tr>
                         );
                       })}
@@ -1396,14 +1434,22 @@ function SimulationMode({ onClose }: { onClose: (newPlan?: Plan) => void }) {
 
               {shoppingList.length > 0 && (
                 <div className="p-2 border-t border-eve-border bg-eve-bg/30 space-y-2">
-                  {!noPrices && (
-                    <div className="flex items-center justify-between px-1">
-                      <span className="text-[9px] text-eve-muted uppercase tracking-wider">Purchase Cost</span>
-                      <span className="text-xs font-mono font-semibold text-eve-orange">
-                        {isk(purchaseCost)} ISK
+                  <div className="flex items-center justify-between px-1 flex-wrap gap-2">
+                    {!noPrices && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] text-eve-muted uppercase tracking-wider">Purchase Cost</span>
+                        <span className="text-xs font-mono font-semibold text-eve-orange">
+                          {isk(purchaseCost)} ISK
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] text-eve-muted uppercase tracking-wider">Purchase Vol</span>
+                      <span className="text-xs font-mono font-semibold text-eve-text">
+                        {fmtVolCompact(purchaseVol)} m³
                       </span>
                     </div>
-                  )}
+                  </div>
                   <button onClick={copyMultibuy}
                     className="w-full px-3 py-1.5 bg-eve-orange/10 hover:bg-eve-orange border
                                border-eve-orange/30 hover:border-eve-orange text-eve-orange

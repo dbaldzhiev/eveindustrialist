@@ -9,6 +9,12 @@ import { Spinner, fmtISK } from "./DashboardPage";
 import { useRefresh } from "../context/RefreshContext";
 import type { WarehouseItem, Character, AppSettings, AssetLocation } from "../types";
 
+function fmtVolCompact(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000)     return (n / 1_000).toFixed(1) + "K";
+  return n.toFixed(1);
+}
+
 interface Props {
   character: Character;
 }
@@ -316,6 +322,9 @@ export default function WarehousePage({ character }: Props) {
                   <th className="px-4 py-3 text-right cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort("quantity")}>
                     Quantity {sortField === "quantity" && (sortOrder === "asc" ? "↑" : "↓")}
                   </th>
+                  <th className="px-4 py-3 text-right">
+                    Volume
+                  </th>
                   <th className="px-4 py-3 text-right cursor-pointer select-none hover:text-white transition-colors" onClick={() => handleSort("estimated_price")}>
                     Est. Unit Price {sortField === "estimated_price" && (sortOrder === "asc" ? "↑" : "↓")}
                   </th>
@@ -327,7 +336,7 @@ export default function WarehousePage({ character }: Props) {
               <tbody className="divide-y divide-eve-border/50">
                 {filtered.length === 0 ? (
                     <tr>
-                        <td colSpan={4} className="px-4 py-20 text-center text-eve-muted italic">
+                        <td colSpan={5} className="px-4 py-20 text-center text-eve-muted italic">
                             No items found in this warehouse source.
                         </td>
                     </tr>
@@ -349,6 +358,10 @@ export default function WarehousePage({ character }: Props) {
                     </td>
                     <td className="px-4 py-3 text-right text-eve-text font-mono font-medium">
                       {item.quantity.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right text-eve-muted font-mono">
+                      <div className="text-xs">{fmtVolCompact(item.volume || 0)}m³</div>
+                      <div className="text-[10px] opacity-60">{fmtVolCompact((item.volume || 0) * item.quantity)}m³ total</div>
                     </td>
                     <td className="px-4 py-3 text-right text-eve-muted font-mono">
                       {fmtISK(item.estimated_price || 0)}

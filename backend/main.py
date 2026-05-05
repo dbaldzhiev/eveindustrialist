@@ -265,6 +265,7 @@ def _calc_profits_for_bps(
     adjusted_prices = ({k: v for k, v in get_adjusted_prices().items() if k in all_type_ids} if solar_system_id else {})
     cost_index      = get_manufacturing_cost_index(solar_system_id) if solar_system_id else 0.0
     category_map    = get_type_categories_batch(list(all_type_ids))
+    volumes         = get_type_volumes_batch(list(all_type_ids))
 
     if mode == "copy":
         # Aggregate BPOs by type_id to show all owners
@@ -361,6 +362,7 @@ def _calc_profits_for_bps(
                 system_cost_index=cost_index,
                 settings=bp_settings,
                 tech_level=data.get("tech_level", 1),
+                volumes=volumes,
             )
             if result:
                 d = result.to_api_dict(include_materials=True)
@@ -510,6 +512,7 @@ def _calc_profits_for_bps(
             system_cost_index=cost_index,
             settings=bp_settings,
             tech_level=data.get("tech_level", 1),
+            volumes=volumes,
         )
         if result and result.profit >= min_profit:
             d = result.to_api_dict(include_materials=include_materials)
@@ -861,6 +864,7 @@ def blueprint_detail(
     market_prices   = get_market_prices(list(all_type_ids), price_region_id) if solar_system_id else {}
     adjusted_prices = {k: v for k, v in get_adjusted_prices().items() if k in all_type_ids}
     cost_index      = get_manufacturing_cost_index(solar_system_id) if solar_system_id else 0.0
+    volumes         = get_type_volumes_batch(list(all_type_ids))
 
     settings = _profit_settings(
         runs, broker_fee, sales_tax, facility_tax,
@@ -884,6 +888,7 @@ def blueprint_detail(
         system_cost_index=cost_index,
         settings=settings,
         tech_level=data.get("tech_level", 1),
+        volumes=volumes,
     )
     if not result:
         raise HTTPException(status_code=404, detail="Calculation failed")
@@ -1103,6 +1108,7 @@ def blueprints_explore(
     cost_index      = get_manufacturing_cost_index(solar_system_id)
     name_map        = get_type_names_batch(all_bp_ids)
     category_map    = get_type_categories_batch(list(all_type_ids))
+    volumes         = get_type_volumes_batch(list(all_type_ids))
 
     results = []
     for bp_id in all_bp_ids:
@@ -1121,6 +1127,7 @@ def blueprints_explore(
             system_cost_index=cost_index,
             settings=settings,
             tech_level=data.get("tech_level", 1),
+            volumes=volumes,
         )
         if result and result.profit >= min_profit:
             d = result.to_api_dict()
@@ -1186,6 +1193,7 @@ def reactions_explore(
     cost_index      = get_manufacturing_cost_index(solar_system_id)
     name_map        = get_type_names_batch(all_bp_ids)
     category_map    = get_type_categories_batch(list(all_type_ids))
+    volumes         = get_type_volumes_batch(list(all_type_ids))
 
     results = []
     for bp_id in all_bp_ids:
@@ -1205,6 +1213,7 @@ def reactions_explore(
             system_cost_index=cost_index,
             settings=settings,
             tech_level=data.get("tech_level", 1),
+            volumes=volumes,
         )
         if result and result.profit >= min_profit:
             d = result.to_api_dict()
@@ -1473,12 +1482,14 @@ def warehouse_list(session: str | None = Cookie(None)):
     type_ids     = [i["type_id"] for i in items]
     category_map = get_type_categories_batch(type_ids)
     prices       = get_market_prices(type_ids, settings["default_price_region"])
+    volumes      = get_type_volumes_batch(type_ids)
 
     for item in items:
         tid = item["type_id"]
         item["category_name"] = category_map.get(tid, "Unknown")
         # Use sell price as estimated value
         item["estimated_price"] = prices.get(tid, {}).get("sell", 0.0)
+        item["volume"] = round(volumes.get(tid, 0.0), 2)
 
     return sorted(items, key=lambda x: x["type_name"])
 
@@ -1937,6 +1948,7 @@ def plan_summary(
             "to_buy":   to_buy,
             "unit_price": round(unit_p, 2),
             "cost":     round(cost, 2),
+            "volume":   round(volumes.get(type_id, 0.0), 2),
         })
 
     # Output volume
@@ -2015,6 +2027,7 @@ def plan_stats(
     market_prices   = get_market_prices(list(all_type_ids), price_region_id) if solar_system_id else {}
     adjusted_prices = {k: v for k, v in get_adjusted_prices().items() if k in all_type_ids}
     cost_index      = get_manufacturing_cost_index(solar_system_id) if solar_system_id else 0.0
+    volumes         = get_type_volumes_batch(list(all_type_ids))
 
     settings = _profit_settings(
         runs, broker_fee, sales_tax, facility_tax,
@@ -2057,6 +2070,7 @@ def plan_stats(
             system_cost_index=cost_index,
             settings=item_settings,
             tech_level=data.get("tech_level", 1),
+            volumes=volumes,
         )
         if result:
             total_mat_cost += result.material_cost
@@ -2068,6 +2082,7 @@ def plan_stats(
                 "runs":           item["runs"],
                 "profit":         round(result.profit, 2),
                 "isk_per_hour":   round(result.isk_per_hour, 2),
+                "product_volume": round(result.product_volume, 2),
                 "character_id":   item.get("character_id"),
             })
 
@@ -2131,6 +2146,7 @@ def plan_shopping_list(
 
     all_type_ids = list(needed.keys())
     market_prices = get_market_prices(all_type_ids, price_region_id) if solar_system_id else {}
+    volumes       = get_type_volumes_batch(all_type_ids)
 
     # Warehouse stock from curated warehouse_items table
     warehouse: dict[int, int] = {}
@@ -2147,6 +2163,7 @@ def plan_shopping_list(
             "needed":   info["qty"],
             "in_stock": in_stock,
             "to_buy":   to_buy,
+            "volume":   round(volumes.get(type_id, 0.0), 2),
         })
 
     multibuy = "\n".join(
